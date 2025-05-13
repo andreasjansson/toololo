@@ -169,27 +169,33 @@ def test_multiagent_tictactoe():
         game.get_winner,
     ]
 
-    x_generator = toololol.run(
-        client,
-        messages=x_prompt,
-        model="claude-3-7-sonnet-latest",
-        tools=tools,
-        system_prompt=system_prompt,
-    )
+    def create_generator(prompt):
+        return toololol.run(
+            client,
+            messages=prompt,
+            model="claude-3-7-sonnet-latest",
+            tools=tools,
+            system_prompt=system_prompt,
+        )
 
-    o_generator = toololol.run(
-        client,
-        messages=o_prompt,
-        model="claude-3-7-sonnet-latest",
-        tools=tools,
-        system_prompt=system_prompt,
-    )
+    x_generator = create_generator(x_prompt)
+    o_generator = create_generator(o_prompt)
 
     while not game.is_game_over():
         current_player = game.current_player
         current_gen = x_generator if current_player == "X" else o_generator
 
-        output = next(current_gen)
+        try:
+            output = next(current_gen)
+        except StopIteration:
+            # Reinitialize the stopped generator
+            if current_player == "X":
+                x_generator = create_generator(x_prompt)
+                current_gen = x_generator
+            else:
+                o_generator = create_generator(o_prompt)
+                current_gen = o_generator
+            output = next(current_gen)
 
         if isinstance(output, toololol.types.ToolResult):
             if output.func == game.make_move and output.success:
