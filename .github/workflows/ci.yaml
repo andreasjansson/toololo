@@ -53,7 +53,7 @@ jobs:
 
     - name: Run integration tests
       run: |
-        pytest test-integration/
+        pytest -vv -s test-integration/
 
     - name: Build package
       if: env.VERSION_EXISTS == 'false' && github.event_name != 'pull_request'
