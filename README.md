@@ -4,7 +4,7 @@
 
 _Minimal Python function calling for Claude_
 
-![logo](logo.webp)
+![logo](https://github.com/andreasjansson/toololo/blob/main/logo.webp)
 
 Toololo is a tiny library for using Python functions as tools in Claude. It does two things:
 
@@ -41,7 +41,7 @@ for output in generator:
     print(output)
 ```
 
-`output` is one of `ThinkingContent`, `TextContent`, `ToolUseContent`, `ToolResult` (types are defined in [types.py](toololo/types.py)).
+`output` is one of `ThinkingContent`, `TextContent`, `ToolUseContent`, `ToolResult` (types are defined in [types.py](https://github.com/andreasjansson/toololo/blob/main/toololo/types.py)).
 
 ## Examples
 
