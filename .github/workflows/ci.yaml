@@ -52,10 +52,9 @@ jobs:
         echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" >> $GITHUB_ENV
 
     - name: Run integration tests
-      if: github.event_name != 'pull_request'
       run: |
         cd test-integration
-        python -m integration_test
+        pytest test-integration/
 
     - name: Build package
       if: env.VERSION_EXISTS == 'false' && github.event_name != 'pull_request'
