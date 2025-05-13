@@ -29,8 +29,13 @@ def run(
 
     compatible_tools = [make_compatible(func) for func in tools]
     function_map = {hashed_function_name(func): func for func in compatible_tools}
-    original_function_map = {hashed_function_name(compatible_func): func for func, compatible_func in zip(tools, compatible_tools)}
-    tool_schemas = [function_to_jsonschema(client, model, func) for func in compatible_tools]
+    original_function_map = {
+        hashed_function_name(compatible_func): func
+        for func, compatible_func in zip(tools, compatible_tools)
+    }
+    tool_schemas = [
+        function_to_jsonschema(client, model, func) for func in compatible_tools
+    ]
 
     if isinstance(messages, str):
         messages = [{"role": "user", "content": messages}]

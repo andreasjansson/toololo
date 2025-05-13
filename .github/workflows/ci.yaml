@@ -38,12 +38,14 @@ jobs:
     - name: Check if version exists on PyPI
       id: version_check
       run: |
-        if pip index versions toololol | grep -q "${{ env.VERSION }}"; then
+        VERSION="${{ env.VERSION }}"
+        echo "Checking if version $VERSION exists on PyPI"
+        if curl --silent --fail "https://pypi.org/pypi/toololol/$VERSION/json" > /dev/null; then
           echo "VERSION_EXISTS=true" >> $GITHUB_ENV
-          echo "Version ${{ env.VERSION }} already exists on PyPI"
+          echo "Version $VERSION already exists on PyPI"
         else
           echo "VERSION_EXISTS=false" >> $GITHUB_ENV
-          echo "Version ${{ env.VERSION }} does not exist on PyPI"
+          echo "Version $VERSION does not exist on PyPI"
         fi
 
     - name: Set up Anthropic API key for testing
