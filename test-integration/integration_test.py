@@ -1,7 +1,7 @@
 import subprocess
 import anthropic
-import toololol
-from toololol import log
+import toololo
+from toololo import log
 
 log.set_verbosity(log.VERBOSE3)
 
@@ -22,7 +22,7 @@ def test_curl_speed_test():
 
     prompt = "Do a basic network speed test and analyze the results."
 
-    for output in toololol.run(
+    for output in toololo.run(
         client,
         prompt,
         model="claude-3-7-sonnet-latest",
@@ -69,7 +69,7 @@ def test_single_agent_towers_of_hanoi():
 
     assert not towers.is_complete()
 
-    for output in toololol.run(
+    for output in toololo.run(
         client,
         messages=[
             {
@@ -170,7 +170,7 @@ def test_multiagent_tictactoe():
     ]
 
     def create_generator(prompt):
-        return toololol.run(
+        return toololo.run(
             client,
             messages=prompt,
             model="claude-3-7-sonnet-latest",
@@ -197,7 +197,7 @@ def test_multiagent_tictactoe():
                 current_gen = o_generator
             output = next(current_gen)
 
-        if isinstance(output, toololol.types.ToolResult):
+        if isinstance(output, toololo.types.ToolResult):
             if output.func == game.make_move and output.success:
                 print("\nCurrent board:")
                 game.print_board()

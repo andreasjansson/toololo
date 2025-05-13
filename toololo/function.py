@@ -104,7 +104,7 @@ def function_to_jsonschema(
     func: Callable[..., Any],
     max_attempts: int = 5,
 ) -> dict:
-    cache_dir = Path.home() / ".cache" / "toololol" / "schemas"
+    cache_dir = Path.home() / ".cache" / "toololo" / "schemas"
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     hashed_name = hashed_function_name(func)
@@ -340,7 +340,7 @@ T = TypeVar("T")
 def make_compatible(func: Callable[..., T]) -> Callable[..., T]:
     """
     Wrap functions that don't support keyword arguments to make them compatible with
-    the toololol framework.
+    the toololo framework.
 
     For functions that already accept kwargs, this returns the original function.
     For functions that don't accept kwargs, it creates a wrapper that unpacks kwargs

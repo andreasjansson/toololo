@@ -1,10 +1,10 @@
-# toololol
+# toololo
 
 _Minimal Python function calling for Claude_
 
 ![logo](logo.webp)
 
-Toololol is a tiny library for using Python functions as tools in Claude. It does two things:
+Toololo is a tiny library for using Python functions as tools in Claude. It does two things:
 
 * Automatically creates tool use schemas for provided functions
 * Implements a Think/Write/Call loop
@@ -14,12 +14,12 @@ Toololol is a tiny library for using Python functions as tools in Claude. It doe
 The following code will run until Claude considers itself done with the task, or `max_iterations` are exhausted:
 
 ``` python
-import toololol
+import toololo
 import anthropic
 
 client = anthropic.Client()
 
-generator = toololol.run(
+generator = toololo.run(
     client=client,
     messages=messages,   # str or list[dict]
     model=claude_model,  # e.g. "claude-3-7-sonnet-latest
@@ -33,7 +33,7 @@ for output in generator:
     print(output)
 ```
 
-`output` is one of `ThinkingContent`, `TextContent`, `ToolUseContent`, `ToolResult` (types are defined in [types.py](toololol/types.py)).
+`output` is one of `ThinkingContent`, `TextContent`, `ToolUseContent`, `ToolResult` (types are defined in [types.py](toololo/types.py)).
 
 ## Examples
 
@@ -44,7 +44,7 @@ Give Claude access to arbitrary Python functions:
 ``` python
 import subprocess
 import anthropic
-import toololol
+import toololo
 
 def curl(args: list[str]) -> str:
     if "-m" not in args and "--max-time" not in args:
@@ -61,7 +61,7 @@ if __name__ == "__main__":
 
     prompt = "Do a basic network speed test and analyze the results."
 
-    for output in toololol.run(
+    for output in toololo.run(
         client,
         prompt,
         model="claude-3-7-sonnet-latest",
@@ -76,7 +76,7 @@ You can also call methods on objects with state:
 
 ``` python
 import anthropic
-import toololol
+import toololo
 
 class TowersOfHanoi:
     def __init__(self, num_disks=3):
@@ -110,7 +110,7 @@ if __name__ == "__main__":
 
     assert not towers.is_complete()
 
-    for output in toololol.run(
+    for output in toololo.run(
         client,
         messages=[
             {
@@ -128,11 +128,11 @@ if __name__ == "__main__":
 
 ### Multi-agent system
 
-By instantiating two `toololol.run` generators, we can create cooperating or competitive multi-agent systems.
+By instantiating two `toololo.run` generators, we can create cooperating or competitive multi-agent systems.
 
 ``` python
 import anthropic
-import toololol
+import toololo
 
 class TicTacToe:
     def __init__(self):
@@ -218,7 +218,7 @@ if __name__ == "__main__":
         game.get_winner,
     ]
 
-    x_generator = toololol.run(
+    x_generator = toololo.run(
         client,
         messages=x_prompt,
         model="claude-3-7-sonnet-latest",
@@ -226,7 +226,7 @@ if __name__ == "__main__":
         system_prompt=system_prompt,
     )
 
-    o_generator = toololol.run(
+    o_generator = toololo.run(
         client,
         messages=o_prompt,
         model="claude-3-7-sonnet-latest",
@@ -240,7 +240,7 @@ if __name__ == "__main__":
 
         output = next(current_gen)
 
-        if isinstance(output, toololol.types.ToolResult):
+        if isinstance(output, toololo.types.ToolResult):
             if output.func == game.make_move and output.success:
                 print("\nCurrent board:")
                 game.print_board()
