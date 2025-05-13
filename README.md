@@ -9,11 +9,17 @@ Toololo is a tiny library for using Python functions as tools in Claude. It does
 * Automatically creates tool use schemas for provided functions
 * Implements a Think/Write/Call loop
 
+## Install
+
+```shell
+pip install toololo
+```
+
 ## Usage
 
 The following code will run until Claude considers itself done with the task, or `max_iterations` are exhausted:
 
-``` python
+```python
 import toololo
 import anthropic
 
@@ -41,7 +47,7 @@ for output in generator:
 
 Give Claude access to arbitrary Python functions:
 
-``` python
+```python
 import subprocess
 import anthropic
 import toololo
@@ -74,7 +80,7 @@ if __name__ == "__main__":
 
 You can also call methods on objects with state:
 
-``` python
+```python
 import anthropic
 import toololo
 
@@ -130,7 +136,7 @@ if __name__ == "__main__":
 
 By instantiating two `toololo.run` generators, we can create cooperating or competitive multi-agent systems.
 
-``` python
+```python
 import anthropic
 import toololo
 
