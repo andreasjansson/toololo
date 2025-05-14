@@ -52,8 +52,9 @@ def run(
         system = []
 
     for iteration in range(max_iterations):
-        is_429 = True
-        while is_429:
+        max_claude_attempts = 10
+        claude_attempt = 0
+        while claude_attempt < max_claude_attempts:
             try:
                 response = client.messages.create(
                     model=model,
@@ -63,12 +64,13 @@ def run(
                     system=system,
                     thinking=thinking_dict,
                 )
-                is_429 = False
-            except anthropic.RateLimitError:
+                break
+            except anthropic.APIStatusError as e:
                 log.warning(
-                    "Caught rate limit error from Anthropic, sleeping for 30 seconds and trying again..."
+                    f"Caught {e.status_code} error from Anthropic, sleeping for 30 seconds and trying again..."
                 )
                 time.sleep(30)
+
 
         assistant_message_content = []
         has_tool_uses = False
