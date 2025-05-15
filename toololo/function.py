@@ -8,7 +8,6 @@ from functools import wraps
 import anthropic
 
 from .function_examples import EXAMPLES
-from . import log
 
 
 def compute_function_hash(func: Callable[..., Any]) -> str:
@@ -178,8 +177,6 @@ Only respond with the tool use schema in a JSON format, nothing else. Follow the
     schema = None
     attempt = 0
 
-    log.v(f"Generating schema for {func.__name__}")
-
     while attempt < max_attempts and not schema:
         attempt += 1
         response = client.messages.create(
@@ -190,8 +187,6 @@ Only respond with the tool use schema in a JSON format, nothing else. Follow the
         )
 
         schema_text = response.content[0].text
-
-        log.v(schema_text)
 
         if "```json" in schema_text:
             schema_text = schema_text.split("```json")[1].split("```")[0]
@@ -209,7 +204,6 @@ Only respond with the tool use schema in a JSON format, nothing else. Follow the
             else:
                 schema = None
         except (json.JSONDecodeError, ValueError) as e:
-            log.v(f"Failed to generate schema: {e}")
             schema = None
 
     raise ValueError(
@@ -227,29 +221,22 @@ def validate_schema(schema: dict) -> bool:
         # Check for extra top-level fields
         extra_fields = [field for field in schema if field not in allowed_fields]
         if extra_fields:
-            log.v(f"Schema validation failed: Extra top-level fields {extra_fields}")
             return False
 
         # Validate name
         if not isinstance(schema["name"], str) or not schema["name"]:
-            log.v("Schema validation failed: Name is not a valid string")
             return False
 
         # Validate description
         if not isinstance(schema["description"], str) or not schema["description"]:
-            log.v("Schema validation failed: Description is not a valid string")
             return False
 
         # Check input_schema structure
         input_schema = schema.get("input_schema", {})
         if not isinstance(input_schema, dict):
-            log.v("Schema validation failed: input_schema is not a dictionary")
             return False
 
         if input_schema.get("type") != "object":
-            log.v(
-                f"Schema validation failed: input_schema type is not 'object', got {input_schema.get('type')}"
-            )
             return False
 
         # Check for extra fields in input_schema
@@ -258,29 +245,19 @@ def validate_schema(schema: dict) -> bool:
             field for field in input_schema if field not in allowed_input_schema_fields
         ]
         if extra_input_fields:
-            log.v(
-                f"Schema validation failed: Extra input_schema fields {extra_input_fields}"
-            )
             return False
 
         # Check properties exist and are correctly structured
         properties = input_schema.get("properties", None)
         if not isinstance(properties, dict) or properties is None:
-            log.v(f"Schema validation failed: properties not found or not a dictionary")
             return False
 
         # Check each property has at least a description and type/anyOf/oneOf
         for prop_name, prop_info in properties.items():
             if not isinstance(prop_info, dict):
-                log.v(
-                    f"Schema validation failed: Property '{prop_name}' info is not a dictionary"
-                )
                 return False
 
             if "description" not in prop_info:
-                log.v(
-                    f"Schema validation failed: Property '{prop_name}' missing description"
-                )
                 return False
 
             # Each property should have either type or anyOf/oneOf
@@ -288,49 +265,21 @@ def validate_schema(schema: dict) -> bool:
             has_type_alternative = any(alt in prop_info for alt in ["anyOf", "oneOf"])
 
             if not (has_type or has_type_alternative):
-                log.v(
-                    f"Schema validation failed: Property '{prop_name}' missing type/anyOf/oneOf specification"
-                )
                 return False
-
-            # Check for allowed property fields
-            allowed_prop_fields = {
-                "type",
-                "description",
-                "anyOf",
-                "oneOf",
-                "enum",
-                "items",
-            }
-            # extra_prop_fields = [
-            #    field for field in prop_info if field not in allowed_prop_fields
-            # ]
-            # if extra_prop_fields:
-            #    log.v(
-            #        f"Schema validation failed: Property '{prop_name}' has extra fields {extra_prop_fields}"
-            #    )
-            #    return False
 
         # Validate required field if present
         required = input_schema.get("required", [])
         if not isinstance(required, list):
-            log.v(
-                f"Schema validation failed: 'required' field is not a list, got {type(required)}"
-            )
             return False
 
         # All required fields should exist in properties
         for field in required:
             if field not in properties:
-                log.v(
-                    f"Schema validation failed: Required field '{field}' not in properties"
-                )
                 return False
 
         return True
 
     except Exception as e:
-        log.v(f"Schema validation exception: {e}")
         return False
 
 

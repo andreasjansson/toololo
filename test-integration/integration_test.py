@@ -1,9 +1,6 @@
 import subprocess
 import anthropic
 import toololo
-from toololo import log
-
-log.set_verbosity(log.VERBOSE3)
 
 
 def curl(args: list[str]) -> str:

@@ -6,7 +6,6 @@ import anthropic
 
 from .types import ThinkingContent, TextContent, ToolUseContent, ToolResult
 from .function import function_to_jsonschema, hashed_function_name, make_compatible
-from . import log
 
 
 def run(
@@ -66,9 +65,6 @@ def run(
                 )
                 break
             except anthropic.APIStatusError as e:
-                log.warning(
-                    f"Caught {e.status_code} error from Anthropic, sleeping for 30 seconds and trying again..."
-                )
                 time.sleep(30)
 
 
