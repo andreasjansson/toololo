@@ -19,7 +19,7 @@ def test_curl_speed_test():
 
     prompt = "Do a basic network speed test and analyze the results."
 
-    for output in toololo.run(
+    for output in toololo.Run(
         client,
         prompt,
         model="claude-3-7-sonnet-latest",
@@ -66,7 +66,7 @@ def test_single_agent_towers_of_hanoi():
 
     assert not towers.is_complete()
 
-    for output in toololo.run(
+    for output in toololo.Run(
         client,
         messages=[
             {
@@ -167,7 +167,7 @@ def test_multiagent_tictactoe():
     ]
 
     def create_generator(prompt):
-        return toololo.run(
+        return toololo.Run(
             client,
             messages=prompt,
             model="claude-3-7-sonnet-latest",

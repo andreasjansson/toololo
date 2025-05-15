@@ -1,37 +1,41 @@
-from typing import Callable, Any
+from typing import Callable, Any, Protocol
 from dataclasses import dataclass
 
 
-@dataclass
-class ThinkingContent:
+class Output(Protocol):
+    pass
+
+
+@dataclass(frozen=True)
+class ThinkingContent(Output):
     content: str
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         return f"<<< THINKING >>>\n{self.content}"
 
 
-@dataclass
-class TextContent:
+@dataclass(frozen=True)
+class TextContent(Output):
     content: str
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         return f"<<< TEXT >>>\n{self.content}"
 
 
-@dataclass
-class ToolUseContent:
+@dataclass(frozen=True)
+class ToolUseContent(Output):
     name: str
     input: dict[str, Any]
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         return f"<<< TOOL USE >>>\nFunction: {self.name}\nArguments: {self.input}"
 
 
-@dataclass
-class ToolResult:
+@dataclass(frozen=True)
+class ToolResult(Output):
     success: bool
     func: Callable[..., Any] | None
     content: Any
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         return f"<<< TOOL RESULT >>>\n{self.content}"

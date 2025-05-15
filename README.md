@@ -27,7 +27,7 @@ import anthropic
 
 client = anthropic.Client()
 
-generator = toololo.run(
+generator = toololo.Run(
     client=client,
     messages=messages,   # str or list[dict]
     model=claude_model,  # e.g. "claude-3-7-sonnet-latest
@@ -69,7 +69,7 @@ if __name__ == "__main__":
 
     prompt = "Do a basic network speed test and analyze the results."
 
-    for output in toololo.run(
+    for output in toololo.Run(
         client,
         prompt,
         model="claude-3-7-sonnet-latest",
@@ -118,7 +118,7 @@ if __name__ == "__main__":
 
     assert not towers.is_complete()
 
-    for output in toololo.run(
+    for output in toololo.Run(
         client,
         messages=[
             {
@@ -136,7 +136,7 @@ if __name__ == "__main__":
 
 ### Multi-agent system
 
-By instantiating two `toololo.run` generators, we can create cooperating or competitive multi-agent systems.
+By instantiating two `toololo.Run` generators, we can create cooperating or competitive multi-agent systems.
 
 ```python
 import anthropic
@@ -226,7 +226,7 @@ if __name__ == "__main__":
         game.get_winner,
     ]
 
-    x_generator = toololo.run(
+    x_generator = toololo.Run(
         client,
         messages=x_prompt,
         model="claude-3-7-sonnet-latest",
@@ -234,7 +234,7 @@ if __name__ == "__main__":
         system_prompt=system_prompt,
     )
 
-    o_generator = toololo.run(
+    o_generator = toololo.Run(
         client,
         messages=o_prompt,
         model="claude-3-7-sonnet-latest",
