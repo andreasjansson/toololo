@@ -1,6 +1,6 @@
 # toololo
 
-![PyPI - Version](https://img.shields.io/pypi/v/toololo)
+[https://pypi.org/project/toololo/](![PyPI - Version](https://img.shields.io/pypi/v/toololo))
 
 _Minimal Python function calling for Claude_
 
