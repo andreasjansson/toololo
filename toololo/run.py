@@ -54,15 +54,16 @@ class Run:
             self.messages = messages.copy()
 
         if system_prompt:
-            self.system = [
-                {
-                    "type": "text",
-                    "text": system_prompt,
-                    "cache_control": {"type": "ephemeral"},
-                }
-            ]
-        else:
-            self.system = []
+            system_prompt += "\n\n# Additional instructions\n"
+        system_prompt += "If possible, call multiple tools in the same content block and i will call them in parallel to speed things up"
+
+        self.system = [
+            {
+                "type": "text",
+                "text": system_prompt,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
 
         self.pending_user_messages = []
         self.iteration = 0
@@ -83,13 +84,14 @@ class Run:
             claude_attempt = 0
             while claude_attempt < max_claude_attempts:
                 try:
-                    response = self.client.messages.create(
+                    response = self.client.beta.messages.create(
                         model=self.model,
                         max_tokens=self.max_tokens + self.thinking_budget,
                         messages=self.messages,
                         tools=self.tool_schemas,
                         system=self.system,
                         thinking=self.thinking_dict,
+                        betas=["token-efficient-tools-2025-02-19"],
                     )
                     break
                 except anthropic.APIStatusError:
@@ -102,6 +104,8 @@ class Run:
             assistant_message_content = []
             has_tool_uses = False
             tool_results = []
+
+            print(response.content)
 
             # Process each content item
             for content in response.content:
@@ -163,10 +167,10 @@ class Run:
                 return
 
             # Add the messages for the next iteration
-            self.messages.append(
-                {"role": "assistant", "content": assistant_message_content}
-            )
-            self.messages.append({"role": "user", "content": tool_results})
+            self.messages += [
+                {"role": "assistant", "content": assistant_message_content},
+                {"role": "user", "content": tool_results},
+            ]
 
     def append_user_message(self, content):
         """
