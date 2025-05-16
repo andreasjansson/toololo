@@ -1,25 +1,45 @@
-import subprocess
+import pytest
+import asyncio
 import anthropic
 import toololo
 
 
-def curl(args: list[str]) -> str:
+async def curl(args: list[str]) -> str:
+    """Run curl command asynchronously.
+
+    Args:
+        args: List of arguments to pass to curl
+
+    Returns:
+        The output of the curl command
+    """
     if "-m" not in args and "--max-time" not in args:
         args = args + ["--max-time", "30"]
 
-    result = subprocess.run(["curl"] + args, capture_output=True, text=True, timeout=60)
-    if result.returncode != 0:
-        return f"Error (code {result.returncode}): {result.stderr}"
+    # Create subprocess
+    process = await asyncio.create_subprocess_exec(
+        "curl",
+        *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
 
-    return result.stdout
+    # Wait for the subprocess to finish and get stdout/stderr
+    stdout, stderr = await process.communicate()
+
+    if process.returncode != 0:
+        return f"Error (code {process.returncode}): {stderr.decode()}"
+
+    return stdout.decode()
 
 
-def test_curl_speed_test():
-    client = anthropic.Client()
+@pytest.mark.asyncio
+async def test_curl_speed_test():
+    client = anthropic.AsyncClient()
 
     prompt = "Do a basic network speed test and analyze the results."
 
-    for output in toololo.Run(
+    async for output in toololo.Run(
         client,
         prompt,
         model="claude-3-7-sonnet-latest",
@@ -60,13 +80,14 @@ class TowersOfHanoi:
         return len(self.towers[2]) == self.num_disks
 
 
-def test_single_agent_towers_of_hanoi():
-    client = anthropic.Client()
+@pytest.mark.asyncio
+async def test_single_agent_towers_of_hanoi():
+    client = anthropic.AsyncClient()
     towers = TowersOfHanoi()
 
     assert not towers.is_complete()
 
-    for output in toololo.Run(
+    async for output in toololo.Run(
         client,
         messages=[
             {
@@ -148,8 +169,9 @@ class TicTacToe:
                 print("-" * 9)
 
 
-def test_multiagent_tictactoe():
-    client = anthropic.Client()
+@pytest.mark.asyncio
+async def test_multiagent_tictactoe():
+    client = anthropic.AsyncClient()
     game = TicTacToe()
 
     x_prompt = "You are player X"
@@ -183,8 +205,8 @@ def test_multiagent_tictactoe():
         current_gen = x_generator if current_player == "X" else o_generator
 
         try:
-            output = next(current_gen)
-        except StopIteration:
+            output = await anext(current_gen)
+        except StopAsyncIteration:
             # Reinitialize the stopped generator
             if current_player == "X":
                 x_generator = create_generator(x_prompt)
@@ -192,7 +214,7 @@ def test_multiagent_tictactoe():
             else:
                 o_generator = create_generator(o_prompt)
                 current_gen = o_generator
-            output = next(current_gen)
+            output = await anext(current_gen)
 
         if isinstance(output, toololo.types.ToolResult):
             if output.func == game.make_move and output.success:

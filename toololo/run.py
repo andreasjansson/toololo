@@ -1,8 +1,8 @@
-# toololo/run.py
-import time
 import json
 import traceback
-from typing import Callable, Any, cast, Iterator
+import asyncio
+import inspect
+from typing import Callable, Any, cast, AsyncIterator, Optional
 import anthropic
 
 from .types import Output, ThinkingContent, TextContent, ToolUseContent, ToolResult
@@ -12,7 +12,7 @@ from .function import function_to_jsonschema, hashed_function_name, make_compati
 class Run:
     def __init__(
         self,
-        client: anthropic.Client,
+        client: anthropic.AsyncClient,
         messages: list | str,
         model: str,
         tools: list[Callable[..., Any]],
@@ -43,10 +43,7 @@ class Run:
             hashed_function_name(compatible_func): func
             for func, compatible_func in zip(tools, self.compatible_tools)
         }
-        self.tool_schemas = [
-            function_to_jsonschema(client, model, func)
-            for func in self.compatible_tools
-        ]
+        self.tool_schemas = []
 
         if isinstance(messages, str):
             self.messages = [{"role": "user", "content": messages}]
@@ -55,7 +52,7 @@ class Run:
 
         if system_prompt:
             system_prompt += "\n\n# Additional instructions\n"
-        system_prompt += "If possible, call multiple tools in the same content block and i will call them in parallel to speed things up"
+        system_prompt += "Highly desirable: Whevener possible, call multiple tools in the same content block so that I can call the tools in parallel more efficiently."
 
         self.system = [
             {
@@ -68,10 +65,37 @@ class Run:
         self.pending_user_messages = []
         self.iteration = 0
 
-    def __next__(self) -> Output:
-        return next(self)
+        self.initialized = False
+        self._generator: Optional[AsyncIterator[Output]] = None
 
-    def __iter__(self) -> Iterator[Output]:
+    async def initialize(self) -> None:
+        if self.initialized:
+            return
+
+        # Execute all function_to_jsonschema calls in parallel
+        tasks = [
+            function_to_jsonschema(self.client, self.model, func)
+            for func in self.compatible_tools
+        ]
+        self.tool_schemas = await asyncio.gather(*tasks)
+        self.initialized = True
+
+    def __aiter__(self) -> AsyncIterator[Output]:
+        """Return self as an async iterator."""
+        return self
+
+    async def __anext__(self) -> Output:
+        return await self._get_generator().__anext__()
+
+    def _get_generator(self) -> AsyncIterator[Output]:
+        """Get or create the async generator for iteration."""
+        if self._generator is None:
+            self._generator = self._generate_outputs()
+        return self._generator
+
+    async def _generate_outputs(self) -> AsyncIterator[Output]:
+        """Generate outputs as an async iterator."""
+        await self.initialize()
         for self.iteration in range(self.max_iterations):
             # Process any pending user messages
             if self.pending_user_messages:
@@ -84,7 +108,7 @@ class Run:
             claude_attempt = 0
             while claude_attempt < max_claude_attempts:
                 try:
-                    response = self.client.beta.messages.create(
+                    response = await self.client.beta.messages.create(
                         model=self.model,
                         max_tokens=self.max_tokens + self.thinking_budget,
                         messages=self.messages,
@@ -96,18 +120,19 @@ class Run:
                     break
                 except anthropic.APIStatusError:
                     claude_attempt += 1
-                    time.sleep(30)
+                    await asyncio.sleep(30)
                     if claude_attempt >= max_claude_attempts:
                         return
 
             # Process the response
             assistant_message_content = []
-            has_tool_uses = False
             tool_results = []
 
-            print(response.content)
+            # Find all tool_use blocks for parallel processing
+            tool_use_tasks = []
+            tool_use_contents = []
 
-            # Process each content item
+            # First pass: collect all content items and prepare tool calls
             for content in response.content:
                 assistant_message_content.append(content)
 
@@ -116,26 +141,41 @@ class Run:
                 elif content.type == "text":
                     yield TextContent(content.text)
                 elif content.type == "tool_use":
-                    has_tool_uses = True
                     func_name = content.name
                     func_args = cast(dict[str, Any], content.input)
 
                     # Yield the tool use
-                    yield ToolUseContent(content.name, func_args)
+                    tool_content = ToolUseContent(content.name, func_args)
+                    yield tool_content
+                    tool_use_contents.append((content, tool_content))
 
-                    # Process the tool use
+                    # Create task for parallel execution
                     if func_name in self.function_map:
                         func = self.function_map[func_name]
                         original_func = self.original_function_map[func_name]
+                        task = self._execute_function(func, **func_args)
+                        tool_use_tasks.append((content, task, original_func, True))
+                    else:
+                        error_msg = f"Invalid tool: {func_name}. Valid available tools are: {', '.join(self.function_map.keys())}"
+                        tool_use_tasks.append((content, error_msg, None, False))
+
+            # Execute all tool calls in parallel if there are any
+            if tool_use_tasks:
+                # Wait for all tasks to complete (or error)
+                tool_results = []
+                for content, task_or_error, original_func, is_task in tool_use_tasks:
+                    if is_task:
                         try:
-                            result_content = json.dumps(func(**func_args))
+                            # Execute the task
+                            result = await task_or_error
+                            result_content = json.dumps(result)
                             success = True
                         except Exception as e:
                             result_content = "".join(traceback.format_exception(e))
                             success = False
                     else:
-                        result_content = f"Invalid tool: {func_name}. Valid available tools are: {', '.join(self.function_map.keys())}"
-                        original_func = None
+                        # This is already an error message
+                        result_content = task_or_error
                         success = False
 
                     # Yield the tool result
@@ -160,7 +200,7 @@ class Run:
                     tool_results.append(tool_result)
 
             # If no tool uses, we're done
-            if not has_tool_uses:
+            else:
                 self.messages.append(
                     {"role": "assistant", "content": assistant_message_content}
                 )
@@ -171,6 +211,17 @@ class Run:
                 {"role": "assistant", "content": assistant_message_content},
                 {"role": "user", "content": tool_results},
             ]
+
+    async def _execute_function(self, func, **kwargs):
+        """Execute a function, handling both sync and async functions appropriately"""
+        if inspect.iscoroutinefunction(func):
+            # Async function - await it directly
+            return await func(**kwargs)
+        else:
+            # Sync function - run in an executor to avoid blocking
+            return await asyncio.get_event_loop().run_in_executor(
+                None, lambda: func(**kwargs)
+            )
 
     def append_user_message(self, content):
         """
