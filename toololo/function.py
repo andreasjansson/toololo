@@ -3,7 +3,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
-from typing import Callable, Any, TypeVar
+from typing import Callable, TypeVar, Awaitable, Union, Any, cast
 from functools import wraps
 import anthropic
 
@@ -97,8 +97,8 @@ def get_function_info(func: Callable[..., Any]) -> str:
     return "\n".join(info)
 
 
-def function_to_jsonschema(
-    client: anthropic.Client,
+async def function_to_jsonschema(
+    client: anthropic.AsyncClient,
     model: str,
     func: Callable[..., Any],
     max_attempts: int = 5,
@@ -179,7 +179,7 @@ Only respond with the tool use schema in a JSON format, nothing else. Follow the
 
     while attempt < max_attempts and not schema:
         attempt += 1
-        response = client.messages.create(
+        response = await client.messages.create(
             model=model,
             max_tokens=4000,
             system=system_prompt,
@@ -286,47 +286,76 @@ def validate_schema(schema: dict) -> bool:
 T = TypeVar("T")
 
 
-def make_compatible(func: Callable[..., T]) -> Callable[..., T]:
+def make_compatible(
+    func: Union[Callable[..., T], Callable[..., Awaitable[T]]],
+) -> Union[Callable[..., T], Callable[..., Awaitable[T]]]:
     """
     Wrap functions that don't support keyword arguments to make them compatible with
     the toololo framework.
 
-    For functions that already accept kwargs, this returns the original function.
-    For functions that don't accept kwargs, it creates a wrapper that unpacks kwargs
-    into positional arguments based on parameter names.
+    This function addresses three cases:
+    1. Functions that already accept kwargs - return as-is
+    2. Functions with only positional-or-keyword parameters - return as-is
+    3. Functions with positional-only parameters - wrap to convert kwargs to args
+
+    Works with both sync and async functions.
     """
     sig = inspect.signature(func)
-    accepts_kwargs = any(
-        p.kind in (p.VAR_KEYWORD, p.KEYWORD_ONLY) for p in sig.parameters.values()
-    )
 
-    # If function already supports kwargs or has no parameters, return as-is
-    if accepts_kwargs or not sig.parameters:
+    # If no parameters or doesn't need wrapping, return as-is
+    if not sig.parameters:
         return func
 
-    @wraps(func)
-    def wrapper(**kwargs):
-        # Map keyword arguments to positional arguments based on parameter names
-        param_names = list(sig.parameters.keys())
-        args = []
+    # Check if the function needs wrapping (has any POSITIONAL_ONLY params)
+    needs_wrapping = any(
+        p.kind == inspect.Parameter.POSITIONAL_ONLY for p in sig.parameters.values()
+    )
 
-        # Check if all provided kwargs exist in the function signature
+    # If no wrapping needed, return as-is
+    if not needs_wrapping:
+        return func
+
+    # Get ordered parameter names for mapping kwargs to args
+    param_names = list(sig.parameters.keys())
+
+    # Common logic to prepare positional arguments from kwargs
+    def prepare_args(kwargs):
+        # Check for unknown arguments
         unknown_args = set(kwargs.keys()) - set(param_names)
         if unknown_args:
             raise TypeError(
                 f"Got unexpected keyword arguments: {', '.join(unknown_args)}"
             )
 
-        # Build positional args in the order defined in the function signature
+        # Map kwargs to positional args preserving order from signature
+        args = []
         for name in param_names:
             if name in kwargs:
                 args.append(kwargs[name])
             elif sig.parameters[name].default is not inspect.Parameter.empty:
-                # Skip if parameter has a default value and no value provided
+                # Skip if parameter has default value and not provided
                 continue
             else:
-                raise TypeError(f"Missing required positional argument: '{name}'")
+                raise TypeError(f"Missing required argument: '{name}'")
 
-        return func(*args)
+        return args
 
-    return wrapper
+    # Create appropriate wrapper based on whether function is async or not
+    if inspect.iscoroutinefunction(func):
+
+        @wraps(func)
+        async def async_wrapper(**kwargs):
+            args = prepare_args(kwargs)
+            return await func(*args)
+
+        # Using cast to make type checkers happy about the return type
+        return cast(Callable[..., Awaitable[T]], async_wrapper)
+    else:
+
+        @wraps(func)
+        def wrapper(**kwargs):
+            args = prepare_args(kwargs)
+            return func(*args)
+
+        # Using cast to make type checkers happy about the return type
+        return cast(Callable[..., T], wrapper)

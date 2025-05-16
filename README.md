@@ -22,23 +22,26 @@ pip install toololo
 The following code will run until Claude considers itself done with the task, or `max_iterations` are exhausted:
 
 ```python
+import asyncio
 import toololo
 import anthropic
 
-client = anthropic.Client()
+async def main():
+    client = anthropic.AsyncClient()
 
-generator = toololo.Run(
-    client=client,
-    messages=messages,   # str or list[dict]
-    model=claude_model,  # e.g. "claude-3-7-sonnet-latest
-    tools=list_of_functions,
-    system_prompt=system_prompt,
-    max_tokens=8192,
-    thinking_budget=4096,
-    max_iterations=50,
-)
-for output in generator:
-    print(output)
+    async for output in toololo.Run(
+        client=client,
+        messages=messages,   # str or list[dict]
+        model=claude_model,  # e.g. "claude-3-7-sonnet-latest
+        tools=list_of_functions,
+        system_prompt=system_prompt,
+        max_tokens=8192,
+        thinking_budget=4096,
+        max_iterations=50,
+    ):
+        print(output)
+
+asyncio.run(main())
 ```
 
 `output` is one of `ThinkingContent`, `TextContent`, `ToolUseContent`, `ToolResult` (types are defined in [types.py](https://github.com/andreasjansson/toololo/blob/main/toololo/types.py)).
@@ -50,32 +53,54 @@ for output in generator:
 Give Claude access to arbitrary Python functions:
 
 ```python
+import asyncio
 import subprocess
 import anthropic
 import toololo
 
-def curl(args: list[str]) -> str:
+async def curl(args: list[str]) -> str:
+    """Run curl command asynchronously.
+
+    Args:
+        args: List of arguments to pass to curl
+
+    Returns:
+        The output of the curl command
+    """
     if "-m" not in args and "--max-time" not in args:
         args = args + ["--max-time", "30"]
 
-    result = subprocess.run(["curl"] + args, capture_output=True, text=True, timeout=60)
-    if result.returncode != 0:
-        return f"Error (code {result.returncode}): {result.stderr}"
+    # Create subprocess
+    process = await asyncio.create_subprocess_exec(
+        "curl",
+        *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
 
-    return result.stdout
+    # Wait for the subprocess to finish and get stdout/stderr
+    stdout, stderr = await process.communicate()
 
-if __name__ == "__main__":
-    client = anthropic.Client()
+    if process.returncode != 0:
+        return f"Error (code {process.returncode}): {stderr.decode()}"
+
+    return stdout.decode()
+
+async def main():
+    client = anthropic.AsyncClient()
 
     prompt = "Do a basic network speed test and analyze the results."
 
-    for output in toololo.Run(
+    async for output in toololo.Run(
         client,
         prompt,
         model="claude-3-7-sonnet-latest",
         tools=[curl],
     ):
         print(output)
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
 ### Call methods on objects
@@ -83,6 +108,7 @@ if __name__ == "__main__":
 You can also call methods on objects with state:
 
 ```python
+import asyncio
 import anthropic
 import toololo
 
@@ -112,13 +138,13 @@ class TowersOfHanoi:
     def is_complete(self) -> bool:
         return len(self.towers[2]) == self.num_disks
 
-if __name__ == "__main__":
-    client = anthropic.Client()
+async def main():
+    client = anthropic.AsyncClient()
     towers = TowersOfHanoi()
 
     assert not towers.is_complete()
 
-    for output in toololo.Run(
+    async for output in toololo.Run(
         client,
         messages=[
             {
@@ -132,6 +158,9 @@ if __name__ == "__main__":
         print(output)
 
     assert towers.is_complete()
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
 ### Multi-agent system
@@ -139,6 +168,7 @@ if __name__ == "__main__":
 By instantiating two `toololo.Run` generators, we can create cooperating or competitive multi-agent systems.
 
 ```python
+import asyncio
 import anthropic
 import toololo
 
@@ -207,9 +237,8 @@ class TicTacToe:
             if i < len(self.board) - 1:
                 print("-" * 9)
 
-
-if __name__ == "__main__":
-    client = anthropic.Client()
+async def main():
+    client = anthropic.AsyncClient()
     game = TicTacToe()
 
     x_prompt = "You are player X"
@@ -226,27 +255,33 @@ if __name__ == "__main__":
         game.get_winner,
     ]
 
-    x_generator = toololo.Run(
-        client,
-        messages=x_prompt,
-        model="claude-3-7-sonnet-latest",
-        tools=tools,
-        system_prompt=system_prompt,
-    )
+    def create_generator(prompt):
+        return toololo.Run(
+            client,
+            messages=prompt,
+            model="claude-3-7-sonnet-latest",
+            tools=tools,
+            system_prompt=system_prompt,
+        )
 
-    o_generator = toololo.Run(
-        client,
-        messages=o_prompt,
-        model="claude-3-7-sonnet-latest",
-        tools=tools,
-        system_prompt=system_prompt,
-    )
+    x_generator = create_generator(x_prompt)
+    o_generator = create_generator(o_prompt)
 
     while not game.is_game_over():
         current_player = game.current_player
         current_gen = x_generator if current_player == "X" else o_generator
 
-        output = next(current_gen)
+        try:
+            output = await anext(current_gen)
+        except StopAsyncIteration:
+            # Reinitialize the stopped generator
+            if current_player == "X":
+                x_generator = create_generator(x_prompt)
+                current_gen = x_generator
+            else:
+                o_generator = create_generator(o_prompt)
+                current_gen = o_generator
+            output = await anext(current_gen)
 
         if isinstance(output, toololo.types.ToolResult):
             if output.func == game.make_move and output.success:
@@ -261,4 +296,7 @@ if __name__ == "__main__":
         print(f"Player {winner} wins!")
     else:
         print("It's a draw!")
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```

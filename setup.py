@@ -7,7 +7,7 @@ long_description = (this_directory / "README.md").read_text()
 
 setup(
     name="toololo",
-    version="0.3.0",
+    version="0.4.0",
     packages=find_packages(),
     install_requires=[
         "anthropic>=0.51.0,<1"
