@@ -59,18 +59,9 @@ import anthropic
 import toololo
 
 async def curl(args: list[str]) -> str:
-    """Run curl command asynchronously.
-
-    Args:
-        args: List of arguments to pass to curl
-
-    Returns:
-        The output of the curl command
-    """
     if "-m" not in args and "--max-time" not in args:
         args = args + ["--max-time", "30"]
 
-    # Create subprocess
     process = await asyncio.create_subprocess_exec(
         "curl",
         *args,
@@ -78,7 +69,6 @@ async def curl(args: list[str]) -> str:
         stderr=asyncio.subprocess.PIPE
     )
 
-    # Wait for the subprocess to finish and get stdout/stderr
     stdout, stderr = await process.communicate()
 
     if process.returncode != 0:
