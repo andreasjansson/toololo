@@ -93,6 +93,45 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
+### Interactive prompting
+
+```python
+import asyncio
+import toololo
+
+async def main():
+    tools = [...]  # TODO: fill out with your own tools
+    messages = []
+
+    while True:
+        print("> ", end="")
+        prompt = input()
+        if prompt.lower() in ["q", "quit", "exit"]:
+            return
+
+        run = toololo.Run(
+            client=anthropic_client,
+            model="claude-3-7-sonnet-latest",
+            messages=messages + [{"role": "user", "content": prompt}],
+            tools=tools,
+            max_iterations=200,
+        )
+        try:
+            async for output in run:
+                if not isinstance(output, toololo.types.ToolResult):
+                    print(output)
+                    print()
+        except (KeyboardInterrupt, asyncio.exceptions.CancelledError):
+            print("\n[Generation interrupted]")
+
+        messages = run.messages
+
+
+if __name__ == "__main__":
+    asyncio.run(main(prompt))
+```
+
+
 ### Call methods on objects
 
 You can also call methods on objects with state:
