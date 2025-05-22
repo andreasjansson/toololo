@@ -5,9 +5,9 @@ from pathlib import Path
 import re
 from typing import Callable, TypeVar, Awaitable, Union, Any, cast
 from functools import wraps
-import anthropic
 
 from .function_examples import EXAMPLES
+from .client import Client
 
 
 def compute_function_hash(func: Callable[..., Any]) -> str:
@@ -98,8 +98,7 @@ def get_function_info(func: Callable[..., Any]) -> str:
 
 
 async def function_to_jsonschema(
-    client: anthropic.AsyncClient,
-    model: str,
+    client: Client,
     func: Callable[..., Any],
     max_attempts: int = 5,
 ) -> dict:
@@ -179,14 +178,12 @@ Only respond with the tool use schema in a JSON format, nothing else. Follow the
 
     while attempt < max_attempts and not schema:
         attempt += 1
-        response = await client.messages.create(
-            model=model,
-            max_tokens=4000,
-            system=system_prompt,
+        response = await client.call(
+            system_prompt=system_prompt,
             messages=[{"role": "user", "content": user_message}],
         )
 
-        schema_text = response.content[0].text
+        schema_text = [c.text for c in response.content if c.type == "text"][0]
 
         if "```json" in schema_text:
             schema_text = schema_text.split("```json")[1].split("```")[0]

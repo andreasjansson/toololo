@@ -1,6 +1,8 @@
 import pytest
 import asyncio
 import anthropic
+import openai
+
 import toololo
 
 
@@ -18,10 +20,7 @@ async def curl(args: list[str]) -> str:
 
     # Create subprocess
     process = await asyncio.create_subprocess_exec(
-        "curl",
-        *args,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
+        "curl", *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
     )
 
     # Wait for the subprocess to finish and get stdout/stderr
@@ -34,15 +33,19 @@ async def curl(args: list[str]) -> str:
 
 
 @pytest.mark.asyncio
-async def test_curl_speed_test():
-    client = anthropic.AsyncClient()
-
-    prompt = "Do a basic network speed test and analyze the results."
-
+@pytest.mark.parametrize(
+    "client_class,model",
+    [
+        #(anthropic.AsyncClient, "claude-3-7-sonnet-latest"),
+        (openai.AsyncOpenAI, "gpt-4.1"),
+    ],
+)
+async def test_curl_speed_test(client_class, model):
+    client = client_class()
     async for output in toololo.Run(
-        client,
-        prompt,
-        model="claude-3-7-sonnet-latest",
+        client=client,
+        messages="Do a basic network speed test and analyze the results.",
+        model=model,
         tools=[curl],
     ):
         print(output)

@@ -1,5 +1,28 @@
+import inspect
+import asyncio
 from typing import Callable, Any, Protocol
 from dataclasses import dataclass
+
+
+@dataclass
+class Tool:
+    name: str
+    func: Callable[..., Any]
+    schema: dict[str, Any]
+    wrapped_func: Callable[..., Any] | None = None
+
+    async def call(self, **kwargs):
+        if self.wrapped_func is None:
+            func = self.func
+        else:
+            func = self.wrapped_func
+
+        if inspect.iscoroutinefunction(func):
+            return await func(**kwargs)
+        else:
+            return await asyncio.get_event_loop().run_in_executor(
+                None, lambda: func(**kwargs)
+            )
 
 
 class Output(Protocol):
