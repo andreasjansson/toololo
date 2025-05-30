@@ -26,6 +26,22 @@ def truncate_lines(text: str, max_lines: int = 50, max_line_length: int = 200) -
     return '\n'.join(truncated_lines)
 
 
+def print_help():
+    """Print help information for the chat interface."""
+    help_text = """
+Available commands:
+  /help      - Show this help message
+  /debug     - Show conversation history as JSON
+  q, quit, exit - Exit the chat
+
+Usage:
+  - Type your message and press Enter to chat with the AI
+  - The AI has access to the provided tools and can use them to help you
+  - Use Ctrl+C to interrupt generation
+"""
+    print(help_text.strip())
+
+
 class CustomJSONEncoder(json.JSONEncoder):
     def default(self, obj):
         if hasattr(obj, "to_dict") and callable(getattr(obj, "to_dict")):
@@ -48,6 +64,9 @@ async def chat(
     while True:
         print("> ", end="")
         prompt = input()
+        if not prompt:
+            continue
+
         if prompt.strip().lower() in ["q", "quit", "exit"]:
             return
 
