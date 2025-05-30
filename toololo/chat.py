@@ -70,6 +70,10 @@ async def chat(
         if prompt.strip().lower() in ["q", "quit", "exit"]:
             return
 
+        if prompt.strip().lower() == "/help":
+            print_help()
+            continue
+
         if prompt.strip().lower() == "/debug":
             print(json.dumps(messages, indent=2, cls=CustomJSONEncoder))
             continue
