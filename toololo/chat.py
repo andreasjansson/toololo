@@ -9,7 +9,7 @@ from .types import ToolResult
 
 def truncate_lines(text: str, max_lines: int = 50, max_line_length: int = 200) -> str:
     """Truncate text to a maximum number of lines and line length for display."""
-    lines = text.split('\n')
+    lines = text.split("\n")
 
     # Truncate each line if it's too long
     truncated_lines = []
@@ -23,7 +23,7 @@ def truncate_lines(text: str, max_lines: int = 50, max_line_length: int = 200) -
     if len(lines) > max_lines:
         truncated_lines.append(f"... ({len(lines) - max_lines} more lines)")
 
-    return '\n'.join(truncated_lines)
+    return "\n".join(truncated_lines)
 
 
 def print_help():

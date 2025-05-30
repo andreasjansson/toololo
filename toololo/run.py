@@ -51,16 +51,15 @@ class Run:
             self.messages = messages.copy()
 
         if system_prompt:
-            system_prompt += "\n\n# Additional instructions\n"
-        system_prompt += "Highly desirable: Whevener possible, call multiple tools in the same content block so that I can call the tools in parallel more efficiently."
-
-        self.system = [
-            {
-                "type": "text",
-                "text": system_prompt,
-                "cache_control": {"type": "ephemeral"},
-            }
-        ]
+            self.system = [
+                {
+                    "type": "text",
+                    "text": system_prompt,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ]
+        else:
+            self.system = []
 
         self.pending_user_messages = []
         self.iteration = 0
