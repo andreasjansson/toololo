@@ -29,7 +29,7 @@ import os
 
 async def main():
     client = openai.AsyncOpenAI(
-        api_key=os.environ.get("OPENROUTER_API_KEY"),
+        api_key=os.environ["OPENROUTER_API_KEY"],
         base_url="https://openrouter.ai/api/v1"
     )
 
@@ -83,7 +83,7 @@ async def curl(args: list[str]) -> str:
 
 async def main():
     client = openai.AsyncOpenAI(
-        api_key=os.environ.get("OPENROUTER_API_KEY"),
+        api_key=os.environ["OPENROUTER_API_KEY"],
         base_url="https://openrouter.ai/api/v1"
     )
 
@@ -111,7 +111,7 @@ import toololo
 
 async def main():
     client = openai.AsyncOpenAI(
-        api_key=os.environ.get("OPENROUTER_API_KEY"),
+        api_key=os.environ["OPENROUTER_API_KEY"],
         base_url="https://openrouter.ai/api/v1"
     )
 
@@ -185,7 +185,7 @@ class TowersOfHanoi:
 
 async def main():
     client = openai.AsyncOpenAI(
-        api_key=os.environ.get("OPENROUTER_API_KEY"),
+        api_key=os.environ["OPENROUTER_API_KEY"],
         base_url="https://openrouter.ai/api/v1"
     )
     towers = TowersOfHanoi()
@@ -288,7 +288,7 @@ class TicTacToe:
 
 async def main():
     client = openai.AsyncOpenAI(
-        api_key=os.environ.get("OPENROUTER_API_KEY"),
+        api_key=os.environ["OPENROUTER_API_KEY"],
         base_url="https://openrouter.ai/api/v1"
     )
     game = TicTacToe()
