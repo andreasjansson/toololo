@@ -4,7 +4,7 @@ import json
 import traceback
 from typing import Any, AsyncIterator, Callable, Optional, cast
 
-import anthropic
+import openai
 
 from .function import function_to_jsonschema, hashed_function_name, make_compatible
 from .types import Output, TextContent, ThinkingContent, ToolResult, ToolUseContent
@@ -13,28 +13,20 @@ from .types import Output, TextContent, ThinkingContent, ToolResult, ToolUseCont
 class Run:
     def __init__(
         self,
-        client: anthropic.AsyncClient,
+        client: openai.AsyncOpenAI,
         messages: list | str,
         model: str,
         tools: list[Callable[..., Any]],
         system_prompt: str = "",
         max_tokens=8192,
-        thinking_budget: int = 4096,
+        reasoning_max_tokens: int = None,
         max_iterations=50,
     ):
         self.client = client
         self.model = model
         self.max_tokens = max_tokens
-        self.thinking_budget = thinking_budget
+        self.reasoning_max_tokens = reasoning_max_tokens
         self.max_iterations = max_iterations
-
-        if thinking_budget > 0:
-            self.thinking_dict = {
-                "type": "enabled",
-                "budget_tokens": thinking_budget,
-            }
-        else:
-            self.thinking_dict = {"type": "disabled"}
 
         self.compatible_tools = [make_compatible(func) for func in tools]
         self.function_map = {
@@ -51,16 +43,7 @@ class Run:
         else:
             self.messages = messages.copy()
 
-        if system_prompt:
-            self.system = [
-                {
-                    "type": "text",
-                    "text": system_prompt,
-                    "cache_control": {"type": "ephemeral"},
-                }
-            ]
-        else:
-            self.system = []
+        self.system_prompt = system_prompt
 
         self.pending_user_messages = []
         self.iteration = 0
@@ -103,67 +86,80 @@ class Run:
                     self.messages.append({"role": "user", "content": message})
                 self.pending_user_messages = []
 
-            # Get response from Claude
-            max_claude_attempts = 10
-            claude_attempt = 0
-            while claude_attempt < max_claude_attempts:
+            # Get response from model
+            max_attempts = 10
+            attempt = 0
+            while attempt < max_attempts:
                 try:
-                    response = await self.client.beta.messages.create(
-                        model=self.model,
-                        max_tokens=self.max_tokens + self.thinking_budget,
-                        messages=self.messages,
-                        tools=self.tool_schemas,
-                        system=self.system,
-                        thinking=self.thinking_dict,
-                        betas=["token-efficient-tools-2025-02-19"],
-                    )
+                    # Prepare messages with system prompt
+                    messages = []
+                    if self.system_prompt:
+                        messages.append({"role": "system", "content": self.system_prompt})
+                    messages.extend(self.messages)
+                    
+                    # Prepare request parameters
+                    params = {
+                        "model": self.model,
+                        "max_tokens": self.max_tokens,
+                        "messages": messages,
+                    }
+                    
+                    if self.tool_schemas:
+                        params["tools"] = self.tool_schemas
+                        
+                    if self.reasoning_max_tokens:
+                        params["reasoning"] = {"max_tokens": self.reasoning_max_tokens}
+                    
+                    response = await self.client.chat.completions.create(**params)
                     break
-                except anthropic.APIStatusError:
-                    claude_attempt += 1
+                except openai.APIStatusError:
+                    attempt += 1
                     await asyncio.sleep(30)
-                    if claude_attempt >= max_claude_attempts:
+                    if attempt >= max_attempts:
                         return
 
             # Process the response
-            assistant_message_content = []
-            tool_results = []
+            message = response.choices[0].message
+            assistant_message_content = message.content
+            
+            # Yield reasoning content if present
+            if hasattr(message, 'reasoning') and message.reasoning:
+                yield ThinkingContent(message.reasoning)
+            
+            # Yield text content if present
+            if assistant_message_content:
+                yield TextContent(assistant_message_content)
 
-            # Find all tool_use blocks for parallel processing
+            # Find all tool calls for parallel processing
             tool_use_tasks = []
             tool_use_contents = []
 
-            # First pass: collect all content items and prepare tool calls
-            for content in response.content:
-                assistant_message_content.append(content)
-
-                if content.type == "thinking":
-                    yield ThinkingContent(content.thinking)
-                elif content.type == "text":
-                    yield TextContent(content.text)
-                elif content.type == "tool_use":
-                    func_name = content.name
-                    func_args = cast(dict[str, Any], content.input)
+            # Process tool calls if present
+            if message.tool_calls:
+                for tool_call in message.tool_calls:
+                    func_name = tool_call.function.name
+                    func_args = json.loads(tool_call.function.arguments)
 
                     # Yield the tool use
-                    tool_content = ToolUseContent(content.name, func_args)
+                    tool_content = ToolUseContent(func_name, func_args)
                     yield tool_content
-                    tool_use_contents.append((content, tool_content))
+                    tool_use_contents.append((tool_call, tool_content))
 
                     # Create task for parallel execution
                     if func_name in self.function_map:
                         func = self.function_map[func_name]
                         original_func = self.original_function_map[func_name]
                         task = self._execute_function(func, **func_args)
-                        tool_use_tasks.append((content, task, original_func, True))
+                        tool_use_tasks.append((tool_call, task, original_func, True))
                     else:
                         error_msg = f"Invalid tool: {func_name}. Valid available tools are: {', '.join(self.function_map.keys())}"
-                        tool_use_tasks.append((content, error_msg, None, False))
+                        tool_use_tasks.append((tool_call, error_msg, None, False))
 
             # Execute all tool calls in parallel if there are any
             if tool_use_tasks:
                 # Wait for all tasks to complete (or error)
                 tool_results = []
-                for content, task_or_error, original_func, is_task in tool_use_tasks:
+                for tool_call, task_or_error, original_func, is_task in tool_use_tasks:
                     if is_task:
                         try:
                             # Execute the task
@@ -181,36 +177,54 @@ class Run:
                     # Yield the tool result
                     yield ToolResult(success, original_func, result_content)
 
-                    # Prepare the tool result for Claude
+                    # Prepare the tool result for the model
                     tool_result = {
-                        "type": "tool_result",
-                        "tool_use_id": content.id,
+                        "tool_call_id": tool_call.id,
+                        "role": "tool",
                         "content": result_content,
                     }
 
-                    if len(result_content) >= 1_000:
-                        for message in self.messages:
-                            message_content = message.get("content", [])
-                            if isinstance(message_content, list):
-                                for tr in message_content:
-                                    if isinstance(tr, dict) and "cache_control" in tr:
-                                        del tr["cache_control"]
-                        tool_result["cache_control"] = {"type": "ephemeral"}
-
                     tool_results.append(tool_result)
 
-            # If no tool uses, we're done
+            # If no tool calls, we're done
             else:
-                self.messages.append(
-                    {"role": "assistant", "content": assistant_message_content}
-                )
+                assistant_msg = {"role": "assistant", "content": assistant_message_content}
+                if hasattr(message, 'reasoning') and message.reasoning:
+                    assistant_msg["reasoning"] = message.reasoning
+                if message.tool_calls:
+                    assistant_msg["tool_calls"] = [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments
+                            }
+                        }
+                        for tc in message.tool_calls
+                    ]
+                self.messages.append(assistant_msg)
                 return
 
             # Add the messages for the next iteration
-            self.messages += [
-                {"role": "assistant", "content": assistant_message_content},
-                {"role": "user", "content": tool_results},
-            ]
+            assistant_msg = {"role": "assistant", "content": assistant_message_content}
+            if hasattr(message, 'reasoning') and message.reasoning:
+                assistant_msg["reasoning"] = message.reasoning
+            if message.tool_calls:
+                assistant_msg["tool_calls"] = [
+                    {
+                        "id": tc.id,
+                        "type": "function", 
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments
+                        }
+                    }
+                    for tc in message.tool_calls
+                ]
+            
+            self.messages.append(assistant_msg)
+            self.messages.extend(tool_results)
 
     async def _execute_function(self, func, **kwargs):
         """Execute a function, handling both sync and async functions appropriately"""

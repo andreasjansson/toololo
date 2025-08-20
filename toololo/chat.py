@@ -1,7 +1,8 @@
 import json
 from typing import Callable, Any
 import asyncio
-import anthropic
+import openai
+import os
 
 from .run import Run
 from .types import ToolResult
@@ -54,10 +55,14 @@ class CustomJSONEncoder(json.JSONEncoder):
 
 async def chat(
     tools: list[Callable[..., Any]],
-    model="claude-sonnet-4-20250514",
+    model="openai/gpt-5",
     max_iterations=200,
+    reasoning_max_tokens: int | None = None,
 ):
-    anthropic_client = anthropic.AsyncAnthropic()
+    client = openai.AsyncOpenAI(
+        api_key=os.environ.get("OPENROUTER_API_KEY"),
+        base_url="https://openrouter.ai/api/v1",
+    )
 
     messages = []
 
@@ -79,11 +84,12 @@ async def chat(
             continue
 
         run = Run(
-            client=anthropic_client,
+            client=client,
             model=model,
             messages=messages + [{"role": "user", "content": prompt}],
             tools=tools,
             max_iterations=max_iterations,
+            reasoning_max_tokens=reasoning_max_tokens,
         )
         try:
             async for output in run:

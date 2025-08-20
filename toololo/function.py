@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 from typing import Callable, TypeVar, Awaitable, Union, Any, cast
 from functools import wraps
-import anthropic
+import openai
 
 from .function_examples import EXAMPLES
 
@@ -98,7 +98,7 @@ def get_function_info(func: Callable[..., Any]) -> str:
 
 
 async def function_to_jsonschema(
-    client: anthropic.AsyncClient,
+    client: openai.AsyncOpenAI,
     model: str,
     func: Callable[..., Any],
     max_attempts: int = 5,
@@ -129,11 +129,15 @@ IMPORTANT: Be thorough in your analysis. Extract all information from function s
 Create an exhaustive description that captures the full purpose and behavior of the function.
 
 The valid tool schema MUST ONLY include these top-level fields:
+- "type": must be "function" 
+- "function": object with "name", "description", and "parameters"
+
+The function object MUST ONLY include these fields:
 - "name": (will be filled in automatically)
 - "description": a detailed description of what the function does
-- "input_schema": a JSON Schema object describing the inputs
+- "parameters": a JSON Schema object describing the inputs
 
-The input_schema MUST ONLY include these fields:
+The parameters schema MUST ONLY include these fields:
 - "type": must be "object"
 - "properties": map of parameter names to their schemas
 - "required": array of required parameter names
@@ -179,14 +183,16 @@ Only respond with the tool use schema in a JSON format, nothing else. Follow the
 
     while attempt < max_attempts and not schema:
         attempt += 1
-        response = await client.messages.create(
+        response = await client.chat.completions.create(
             model=model,
             max_tokens=4000,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_message}],
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message}
+            ],
         )
 
-        schema_text = response.content[0].text
+        schema_text = response.choices[0].message.content
 
         if "```json" in schema_text:
             schema_text = schema_text.split("```json")[1].split("```")[0]
@@ -195,7 +201,9 @@ Only respond with the tool use schema in a JSON format, nothing else. Follow the
 
         try:
             schema = json.loads(schema_text.strip())
-            schema["name"] = hashed_name
+            # Set the function name in OpenAI format
+            if "function" in schema and isinstance(schema["function"], dict):
+                schema["function"]["name"] = hashed_name
             if validate_schema(schema):
                 # Save to cache
                 with open(cache_file, "w") as f:
@@ -212,44 +220,41 @@ Only respond with the tool use schema in a JSON format, nothing else. Follow the
 
 
 def validate_schema(schema: dict) -> bool:
-    """Validate the generated tool use schema for completeness and correctness."""
+    """Validate the generated tool schema for OpenAI format completeness and correctness."""
     try:
-        # Check required top-level fields
-        required_fields = ["name", "description", "input_schema"]
-        allowed_fields = set(required_fields)
-
-        # Check for extra top-level fields
-        extra_fields = [field for field in schema if field not in allowed_fields]
-        if extra_fields:
+        # Check required top-level fields for OpenAI format
+        if schema.get("type") != "function":
             return False
 
+        function_def = schema.get("function", {})
+        if not isinstance(function_def, dict):
+            return False
+
+        # Check required function fields
+        required_function_fields = ["name", "description", "parameters"]
+        for field in required_function_fields:
+            if field not in function_def:
+                return False
+
         # Validate name
-        if not isinstance(schema["name"], str) or not schema["name"]:
+        if not isinstance(function_def["name"], str) or not function_def["name"]:
             return False
 
         # Validate description
-        if not isinstance(schema["description"], str) or not schema["description"]:
+        if not isinstance(function_def["description"], str) or not function_def["description"]:
             return False
 
-        # Check input_schema structure
-        input_schema = schema.get("input_schema", {})
-        if not isinstance(input_schema, dict):
+        # Check parameters structure
+        parameters = function_def.get("parameters", {})
+        if not isinstance(parameters, dict):
             return False
 
-        if input_schema.get("type") != "object":
-            return False
-
-        # Check for extra fields in input_schema
-        allowed_input_schema_fields = {"type", "properties", "required"}
-        extra_input_fields = [
-            field for field in input_schema if field not in allowed_input_schema_fields
-        ]
-        if extra_input_fields:
+        if parameters.get("type") != "object":
             return False
 
         # Check properties exist and are correctly structured
-        properties = input_schema.get("properties", None)
-        if not isinstance(properties, dict) or properties is None:
+        properties = parameters.get("properties", {})
+        if not isinstance(properties, dict):
             return False
 
         # Check each property has at least a description and type/anyOf/oneOf
@@ -268,7 +273,7 @@ def validate_schema(schema: dict) -> bool:
                 return False
 
         # Validate required field if present
-        required = input_schema.get("required", [])
+        required = parameters.get("required", [])
         if not isinstance(required, list):
             return False
 

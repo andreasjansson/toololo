@@ -1,6 +1,7 @@
 import pytest
 import asyncio
-import anthropic
+import openai
+import os
 import toololo
 
 
@@ -82,7 +83,13 @@ class TowersOfHanoi:
 
 @pytest.mark.asyncio
 async def test_single_agent_towers_of_hanoi():
-    client = anthropic.AsyncClient()
+    if not os.environ.get("OPENROUTER_API_KEY"):
+        pytest.skip("OPENROUTER_API_KEY not set")
+        
+    client = openai.AsyncOpenAI(
+        api_key=os.environ.get("OPENROUTER_API_KEY"),
+        base_url="https://openrouter.ai/api/v1",
+    )
     towers = TowersOfHanoi()
 
     assert not towers.is_complete()
@@ -95,7 +102,7 @@ async def test_single_agent_towers_of_hanoi():
                 "content": "Solve this Towers of Hanoi puzzle. The goal is to move all disks from the first tower (index 0) to the third tower (index 2). You can only move one disk at a time, and you cannot place a larger disk on top of a smaller disk.",
             }
         ],
-        model="claude-3-7-sonnet-latest",
+        model="openai/gpt-5",
         tools=[towers.get_state, towers.move, towers.is_complete],
     ):
         print(output)
@@ -171,7 +178,13 @@ class TicTacToe:
 
 @pytest.mark.asyncio
 async def test_multiagent_tictactoe():
-    client = anthropic.AsyncClient()
+    if not os.environ.get("OPENROUTER_API_KEY"):
+        pytest.skip("OPENROUTER_API_KEY not set")
+        
+    client = openai.AsyncOpenAI(
+        api_key=os.environ.get("OPENROUTER_API_KEY"),
+        base_url="https://openrouter.ai/api/v1",
+    )
     game = TicTacToe()
 
     x_prompt = "You are player X"
@@ -192,7 +205,7 @@ async def test_multiagent_tictactoe():
         return toololo.Run(
             client,
             messages=prompt,
-            model="claude-3-7-sonnet-latest",
+            model="openai/gpt-5",
             tools=tools,
             system_prompt=system_prompt,
         )

@@ -2,11 +2,11 @@
 
 [![PyPI - Version](https://img.shields.io/pypi/v/toololo)](https://pypi.org/project/toololo/)
 
-_Minimal Python function calling for Claude_
+_Minimal agent loop and tool use with plain Python functions_
 
 ![logo](https://github.com/andreasjansson/toololo/blob/main/logo.webp)
 
-Toololo is a tiny library for using Python functions as tools in Claude. It does two things:
+Toololo is a tiny library for using Python functions as tools. It does two things:
 
 * Automatically creates tool use schemas for provided functions
 * Implements a Think/Write/Call loop
@@ -19,24 +19,28 @@ pip install toololo
 
 ## Usage
 
-The following code will run until Claude considers itself done with the task, or `max_iterations` are exhausted:
+The following code will run until the model considers itself done with the task, or `max_iterations` are exhausted:
 
 ```python
 import asyncio
 import toololo
-import anthropic
+import openai
+import os
 
 async def main():
-    client = anthropic.AsyncClient()
+    client = openai.AsyncOpenAI(
+        api_key=os.environ.get("OPENROUTER_API_KEY"),
+        base_url="https://openrouter.ai/api/v1"
+    )
 
     async for output in toololo.Run(
         client=client,
         messages=messages,   # str or list[dict]
-        model=claude_model,  # e.g. "claude-3-7-sonnet-latest
+        model="openai/gpt-5",  # Any OpenRouter model
         tools=list_of_functions,
         system_prompt=system_prompt,
         max_tokens=8192,
-        thinking_budget=4096,
+        reasoning_max_tokens=4096,  # Optional: enable reasoning/thinking
         max_iterations=50,
     ):
         print(output)
@@ -50,12 +54,13 @@ asyncio.run(main())
 
 ### Call Python functions
 
-Give Claude access to arbitrary Python functions:
+Give the model access to arbitrary Python functions:
 
 ```python
 import asyncio
 import subprocess
-import anthropic
+import openai
+import os
 import toololo
 
 async def curl(args: list[str]) -> str:
@@ -77,14 +82,17 @@ async def curl(args: list[str]) -> str:
     return stdout.decode()
 
 async def main():
-    client = anthropic.AsyncClient()
+    client = openai.AsyncOpenAI(
+        api_key=os.environ.get("OPENROUTER_API_KEY"),
+        base_url="https://openrouter.ai/api/v1"
+    )
 
     prompt = "Do a basic network speed test and analyze the results."
 
     async for output in toololo.Run(
         client,
         prompt,
-        model="claude-3-7-sonnet-latest",
+        model="openai/gpt-5",
         tools=[curl],
     ):
         print(output)
@@ -97,9 +105,16 @@ if __name__ == "__main__":
 
 ```python
 import asyncio
+import openai
+import os
 import toololo
 
 async def main():
+    client = openai.AsyncOpenAI(
+        api_key=os.environ.get("OPENROUTER_API_KEY"),
+        base_url="https://openrouter.ai/api/v1"
+    )
+
     tools = [...]  # TODO: fill out with your own tools
     messages = []
 
@@ -110,8 +125,8 @@ async def main():
             return
 
         run = toololo.Run(
-            client=anthropic_client,
-            model="claude-3-7-sonnet-latest",
+            client=client,
+            model="openai/gpt-5",
             messages=messages + [{"role": "user", "content": prompt}],
             tools=tools,
             max_iterations=200,
@@ -128,7 +143,7 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main(prompt))
+    asyncio.run(main())
 ```
 
 
@@ -138,7 +153,8 @@ You can also call methods on objects with state:
 
 ```python
 import asyncio
-import anthropic
+import openai
+import os
 import toololo
 
 class TowersOfHanoi:
@@ -168,7 +184,10 @@ class TowersOfHanoi:
         return len(self.towers[2]) == self.num_disks
 
 async def main():
-    client = anthropic.AsyncClient()
+    client = openai.AsyncOpenAI(
+        api_key=os.environ.get("OPENROUTER_API_KEY"),
+        base_url="https://openrouter.ai/api/v1"
+    )
     towers = TowersOfHanoi()
 
     assert not towers.is_complete()
@@ -181,7 +200,7 @@ async def main():
                 "content": "Solve this Towers of Hanoi puzzle. The goal is to move all disks from the first tower (index 0) to the third tower (index 2). You can only move one disk at a time, and you cannot place a larger disk on top of a smaller disk.",
             }
         ],
-        model="claude-3-7-sonnet-latest",
+        model="openai/gpt-5",
         tools=[towers.get_state, towers.move, towers.is_complete],
     ):
         print(output)
@@ -198,7 +217,8 @@ By instantiating two `toololo.Run` generators, we can create cooperating or comp
 
 ```python
 import asyncio
-import anthropic
+import openai
+import os
 import toololo
 
 class TicTacToe:
@@ -267,7 +287,10 @@ class TicTacToe:
                 print("-" * 9)
 
 async def main():
-    client = anthropic.AsyncClient()
+    client = openai.AsyncOpenAI(
+        api_key=os.environ.get("OPENROUTER_API_KEY"),
+        base_url="https://openrouter.ai/api/v1"
+    )
     game = TicTacToe()
 
     x_prompt = "You are player X"
@@ -288,7 +311,7 @@ async def main():
         return toololo.Run(
             client,
             messages=prompt,
-            model="claude-3-7-sonnet-latest",
+            model="openai/gpt-5",
             tools=tools,
             system_prompt=system_prompt,
         )
@@ -329,3 +352,5 @@ async def main():
 if __name__ == "__main__":
     asyncio.run(main())
 ```
+
+
