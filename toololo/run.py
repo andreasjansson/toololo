@@ -245,31 +245,33 @@ class Run:
                     
                     logger.info(f"Completed all {len(tool_use_tasks)} tool calls")
 
-            # Add the messages for the next iteration
-            assistant_msg = {"role": "assistant", "content": assistant_message_content}
-            if hasattr(message, 'reasoning') and message.reasoning:
-                assistant_msg["reasoning"] = message.reasoning
-            if message.tool_calls:
-                assistant_msg["tool_calls"] = [
-                    {
-                        "id": tc.id,
-                        "type": "function", 
-                        "function": {
-                            "name": tc.function.name,
-                            "arguments": tc.function.arguments
+                # Add the messages for the next iteration
+                assistant_msg = {"role": "assistant", "content": assistant_message_content}
+                if hasattr(message, 'reasoning') and message.reasoning:
+                    assistant_msg["reasoning"] = message.reasoning
+                if message.tool_calls:
+                    assistant_msg["tool_calls"] = [
+                        {
+                            "id": tc.id,
+                            "type": "function", 
+                            "function": {
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments
+                            }
                         }
-                    }
-                    for tc in message.tool_calls
-                ]
-            
-            self.messages.append(assistant_msg)
-            self.messages.extend(tool_results)
-            logger.debug(f"Iteration {self.iteration} completed, continuing to next iteration")
-            
-            # If no tool calls, we're done
-            if not tool_use_tasks:
-                logger.info(f"No tool calls in response, task completed after {self.iteration + 1} iterations")
-                return
+                        for tc in message.tool_calls
+                    ]
+                
+                self.messages.append(assistant_msg)
+                if tool_use_tasks:  # Only extend if there are tool results
+                    self.messages.extend(tool_results)
+                
+                logger.debug(f"Iteration {self.iteration} completed, continuing to next iteration")
+                
+                # If no tool calls, we're done
+                if not tool_use_tasks:
+                    logger.info(f"No tool calls in response, task completed after {self.iteration + 1} iterations")
+                    return
             
         except Exception as e:
             logger.error(f"Error in output generation: {e}")
