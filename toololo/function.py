@@ -106,6 +106,9 @@ async def function_to_jsonschema(
     func: Callable[..., Any],
     max_attempts: int = 5,
 ) -> dict:
+    func_name = func.__name__ if hasattr(func, '__name__') else 'unknown'
+    logger.debug(f"Generating schema for function {func_name}")
+    
     cache_dir = Path.home() / ".cache" / "toololo" / "schemas"
     cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -113,12 +116,17 @@ async def function_to_jsonschema(
     cache_file = cache_dir / f"{hashed_name}.json"
 
     if cache_file.exists():
+        logger.debug(f"Checking cache for {func_name}")
         try:
             with open(cache_file, "r") as f:
                 schema = json.load(f)
             if validate_schema(schema):
+                logger.info(f"Using cached schema for {func_name}")
                 return schema
-        except json.JSONDecodeError:
+            else:
+                logger.warning(f"Cached schema for {func_name} is invalid, regenerating")
+        except json.JSONDecodeError as e:
+            logger.warning(f"Cache file for {func_name} is corrupted: {e}")
             # Ignore cache if it's invalid
             pass
 
