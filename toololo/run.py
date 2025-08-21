@@ -171,8 +171,8 @@ class Run:
                 tool_use_tasks = []
                 tool_use_contents = []
 
-            # Process tool calls if present
-            if message.tool_calls:
+                # Process tool calls if present
+                if message.tool_calls:
                 for tool_call in message.tool_calls:
                     func_name = tool_call.function.name
                     
