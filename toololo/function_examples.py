@@ -15,15 +15,18 @@ def add(a: int, b: int) -> int:
 
 
 EXAMPLES[add] = {
-    "name": "add",
-    "description": "Add two numbers.",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "a": {"description": "First number", "type": "integer"},
-            "b": {"description": "Second number", "type": "integer"},
+    "type": "function",
+    "function": {
+        "name": "add",
+        "description": "Add two numbers.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "a": {"description": "First number", "type": "integer"},
+                "b": {"description": "Second number", "type": "integer"},
+            },
+            "required": ["a", "b"],
         },
-        "required": ["a", "b"],
     },
 }
 
@@ -58,33 +61,32 @@ def process_data(
 
 
 EXAMPLES[process_data] = {
-    "name": "process_data",
-    "description": "Process a list of integers with optional configuration. This function takes a list of integers and processes them according to the provided configuration. If no configuration is provided, default settings are used. The threshold controls the sensitivity of the processing algorithm.",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "items": {
-                "description": "List of integers to process. Each integer should be positive.",
-                "type": "array",
-                "items": {"type": "integer"},
+    "type": "function",
+    "function": {
+        "name": "process_data",
+        "description": "Process a list of integers with optional configuration. This function takes a list of integers and processes them according to the provided configuration. If no configuration is provided, default settings are used. The threshold controls the sensitivity of the processing algorithm.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "description": "List of integers to process. Each integer should be positive.",
+                    "type": "array",
+                    "items": {"type": "integer"},
+                },
+                "config": {
+                    "description": "Optional configuration dictionary with processing parameters. Can contain keys like 'mode', 'precision', etc.",
+                    "type": "object",
+                },
+                "threshold": {
+                    "description": "Sensitivity threshold for the processing algorithm. Values range from 0.0 to 1.0, with higher values being more strict.",
+                    "type": "number",
+                    "default": 0.5,
+                    "minimum": 0.0,
+                    "maximum": 1.0,
+                },
             },
-            "config": {
-                "description": "Optional configuration dictionary with processing parameters. Can contain keys like 'mode', 'precision', etc.",
-                "type": "object",
-            },
-            "threshold": {
-                "description": "Sensitivity threshold for the processing algorithm. Values range from 0.0 to 1.0, with higher values being more strict.",
-                "type": "number",
-                "default": 0.5,
-                "minimum": 0.0,
-                "maximum": 1.0,
-            },
+            "required": ["items"],
         },
-        "required": ["items"],
-    },
-    "errors": {
-        "ValueError": "If threshold is not between 0 and 1",
-        "TypeError": "If items contains non-integer values",
     },
 }
 
@@ -117,33 +119,36 @@ def analyze_input(
 
 
 EXAMPLES[analyze_input] = {
-    "name": "analyze_input",
-    "description": "Analyze a value that can be an integer, string, or None. This function performs complex analysis on the input value based on its type and content. The analysis can be customized using the options parameter.",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "value": {
-                "description": "The value to analyze. Can be an integer (for numerical analysis), a string (for text analysis), or None (for default analysis).",
-                "anyOf": [{"type": "integer"}, {"type": "string"}, {"type": "null"}],
-            },
-            "options": {
-                "description": "List of option dictionaries to configure the analysis. Each dict should have 'name' and 'value' keys.",
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": {"type": "string"},
-                        "value": {"type": "object"},
+    "type": "function",
+    "function": {
+        "name": "analyze_input",
+        "description": "Analyze a value that can be an integer, string, or None. This function performs complex analysis on the input value based on its type and content. The analysis can be customized using the options parameter.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "value": {
+                    "description": "The value to analyze. Can be an integer (for numerical analysis), a string (for text analysis), or None (for default analysis).",
+                    "anyOf": [{"type": "integer"}, {"type": "string"}, {"type": "null"}],
+                },
+                "options": {
+                    "description": "List of option dictionaries to configure the analysis. Each dict should have 'name' and 'value' keys.",
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "value": {"type": "object"},
+                        },
+                        "required": ["name", "value"],
                     },
-                    "required": ["name", "value"],
+                },
+                "debug": {
+                    "description": "When True, additional debug information is included in the result.",
+                    "type": "boolean",
+                    "default": False,
                 },
             },
-            "debug": {
-                "description": "When True, additional debug information is included in the result.",
-                "type": "boolean",
-                "default": False,
-            },
+            "required": ["value"],
         },
-        "required": ["value"],
     },
 }

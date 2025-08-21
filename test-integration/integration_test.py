@@ -1,7 +1,17 @@
+import logging
 import pytest
 import asyncio
-import anthropic
+import openai
+import os
+import traceback
 import toololo
+
+# Set up logging for tests
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 async def curl(args: list[str]) -> str:
@@ -35,17 +45,38 @@ async def curl(args: list[str]) -> str:
 
 @pytest.mark.asyncio
 async def test_curl_speed_test():
-    client = anthropic.AsyncClient()
+    logger.info("Starting curl speed test")
+    if not os.environ.get("OPENROUTER_API_KEY"):
+        logger.warning("OPENROUTER_API_KEY not set, skipping test")
+        pytest.skip("OPENROUTER_API_KEY not set")
+        
+    logger.info("Creating OpenRouter client")
+    client = openai.AsyncOpenAI(
+        api_key=os.environ.get("OPENROUTER_API_KEY"),
+        base_url="https://openrouter.ai/api/v1",
+        default_headers={
+            "HTTP-Referer": "https://github.com/andreasjansson/toololo",
+            "X-Title": "toololo"
+        }
+    )
 
     prompt = "Do a basic network speed test and analyze the results."
+    logger.info(f"Starting toololo Run with prompt: {prompt}")
 
-    async for output in toololo.Run(
-        client,
-        prompt,
-        model="claude-3-7-sonnet-latest",
-        tools=[curl],
-    ):
-        print(output)
+    try:
+        async for output in toololo.Run(
+            client,
+            prompt,
+            model="anthropic/claude-sonnet-4",
+            tools=[curl],
+        ):
+            logger.info(f"Got output: {type(output).__name__}")
+            print(output)
+        logger.info("Curl speed test completed successfully")
+    except Exception as e:
+        logger.error(f"Curl speed test failed: {e}")
+        logger.error(f"Test exception: {traceback.format_exc()}")
+        raise
 
 
 class TowersOfHanoi:
@@ -82,7 +113,13 @@ class TowersOfHanoi:
 
 @pytest.mark.asyncio
 async def test_single_agent_towers_of_hanoi():
-    client = anthropic.AsyncClient()
+    if not os.environ.get("OPENROUTER_API_KEY"):
+        pytest.skip("OPENROUTER_API_KEY not set")
+        
+    client = openai.AsyncOpenAI(
+        api_key=os.environ.get("OPENROUTER_API_KEY"),
+        base_url="https://openrouter.ai/api/v1",
+    )
     towers = TowersOfHanoi()
 
     assert not towers.is_complete()
@@ -95,7 +132,7 @@ async def test_single_agent_towers_of_hanoi():
                 "content": "Solve this Towers of Hanoi puzzle. The goal is to move all disks from the first tower (index 0) to the third tower (index 2). You can only move one disk at a time, and you cannot place a larger disk on top of a smaller disk.",
             }
         ],
-        model="claude-3-7-sonnet-latest",
+        model="anthropic/claude-sonnet-4",
         tools=[towers.get_state, towers.move, towers.is_complete],
     ):
         print(output)
@@ -171,7 +208,13 @@ class TicTacToe:
 
 @pytest.mark.asyncio
 async def test_multiagent_tictactoe():
-    client = anthropic.AsyncClient()
+    if not os.environ.get("OPENROUTER_API_KEY"):
+        pytest.skip("OPENROUTER_API_KEY not set")
+        
+    client = openai.AsyncOpenAI(
+        api_key=os.environ.get("OPENROUTER_API_KEY"),
+        base_url="https://openrouter.ai/api/v1",
+    )
     game = TicTacToe()
 
     x_prompt = "You are player X"
@@ -192,7 +235,7 @@ async def test_multiagent_tictactoe():
         return toololo.Run(
             client,
             messages=prompt,
-            model="claude-3-7-sonnet-latest",
+            model="anthropic/claude-sonnet-4",
             tools=tools,
             system_prompt=system_prompt,
         )
