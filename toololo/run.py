@@ -105,8 +105,8 @@ class Run:
                         self.messages.append({"role": "user", "content": message})
                     self.pending_user_messages = []
 
-            # Get response from model
-            logger.debug(f"Making API request for iteration {self.iteration}")
+                # Get response from model
+                logger.debug(f"Making API request for iteration {self.iteration}")
             max_attempts = 10
             attempt = 0
             while attempt < max_attempts:
