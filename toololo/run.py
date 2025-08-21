@@ -25,6 +25,7 @@ class Run:
         reasoning_max_tokens: int = None,
         max_iterations=50,
     ):
+        logger.info(f"Initializing Run with model={model}, {len(tools)} tools, max_iterations={max_iterations}")
         self.client = client
         self.model = model
         self.max_tokens = max_tokens
@@ -47,12 +48,15 @@ class Run:
             self.messages = messages.copy()
 
         self.system_prompt = system_prompt
+        logger.debug(f"System prompt: {system_prompt[:100]}..." if len(system_prompt) > 100 else f"System prompt: {system_prompt}")
 
         self.pending_user_messages = []
         self.iteration = 0
 
         self.initialized = False
         self._generator: Optional[AsyncIterator[Output]] = None
+        
+        logger.debug(f"Tool functions: {[func.__name__ for func in tools]}")
 
     async def initialize(self) -> None:
         if self.initialized:
