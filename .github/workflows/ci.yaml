@@ -48,10 +48,10 @@ jobs:
           echo "Version $VERSION does not exist on PyPI"
         fi
 
-    - name: Set up Anthropic API key for testing
+    - name: Set up OpenRouter API key for testing
       if: github.event_name != 'pull_request'
       run: |
-        echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" >> $GITHUB_ENV
+        echo "OPENROUTER_API_KEY=${{ secrets.OPENROUTER_API_KEY }}" >> $GITHUB_ENV
 
     - name: Run integration tests
       run: |
