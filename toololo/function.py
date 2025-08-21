@@ -194,36 +194,50 @@ Only respond with the tool use schema in a JSON format, nothing else. Follow the
 
     while attempt < max_attempts and not schema:
         attempt += 1
-        response = await client.chat.completions.create(
-            model=model,
-            max_tokens=4000,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message}
-            ],
-        )
-
-        schema_text = response.choices[0].message.content
-
-        if "```json" in schema_text:
-            schema_text = schema_text.split("```json")[1].split("```")[0]
-        elif "```" in schema_text:
-            schema_text = schema_text.split("```")[1].split("```")[0]
-
+        logger.info(f"Schema generation attempt {attempt}/{max_attempts} for {func_name}")
         try:
-            schema = json.loads(schema_text.strip())
-            # Set the function name in OpenAI format
-            if "function" in schema and isinstance(schema["function"], dict):
-                schema["function"]["name"] = hashed_name
-            if validate_schema(schema):
-                # Save to cache
-                with open(cache_file, "w") as f:
-                    json.dump(schema, f, indent=2)
-                return schema
-            else:
+            response = await client.chat.completions.create(
+                model=model,
+                max_tokens=4000,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message}
+                ],
+            )
+            logger.debug(f"Schema generation API call successful for {func_name}")
+
+            schema_text = response.choices[0].message.content
+            logger.debug(f"Raw schema response for {func_name}: {schema_text[:200]}...")
+
+            if "```json" in schema_text:
+                schema_text = schema_text.split("```json")[1].split("```")[0]
+            elif "```" in schema_text:
+                schema_text = schema_text.split("```")[1].split("```")[0]
+
+            try:
+                schema = json.loads(schema_text.strip())
+                # Set the function name in OpenAI format
+                if "function" in schema and isinstance(schema["function"], dict):
+                    schema["function"]["name"] = hashed_name
+                if validate_schema(schema):
+                    logger.info(f"Successfully generated valid schema for {func_name}")
+                    # Save to cache
+                    with open(cache_file, "w") as f:
+                        json.dump(schema, f, indent=2)
+                    logger.debug(f"Cached schema for {func_name}")
+                    return schema
+                else:
+                    logger.warning(f"Generated schema for {func_name} failed validation: {schema}")
+                    schema = None
+            except (json.JSONDecodeError, ValueError) as e:
+                logger.error(f"Failed to parse schema JSON for {func_name}: {e}")
+                logger.debug(f"Problematic JSON: {schema_text}")
                 schema = None
-        except (json.JSONDecodeError, ValueError) as e:
-            schema = None
+                
+        except Exception as e:
+            logger.error(f"Error during schema generation API call for {func_name}: {e}")
+            logger.error(f"Schema generation error: {traceback.format_exc()}")
+            # Continue to next attempt
 
     raise ValueError(
         f"Failed to generate valid tool use schema after {max_attempts} attempts"
