@@ -269,6 +269,12 @@ class Run:
             
             self.messages.append(assistant_msg)
             self.messages.extend(tool_results)
+            logger.debug(f"Iteration {self.iteration} completed, continuing to next iteration")
+            
+        except Exception as e:
+            logger.error(f"Error in output generation: {e}")
+            logger.error(f"Generation error details: {traceback.format_exc()}")
+            raise
 
     async def _execute_function(self, func, **kwargs):
         """Execute a function, handling both sync and async functions appropriately"""
