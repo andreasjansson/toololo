@@ -1,8 +1,16 @@
+import logging
 import pytest
 import asyncio
 import openai
 import os
 import toololo
+
+# Set up logging for tests
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 async def curl(args: list[str]) -> str:
