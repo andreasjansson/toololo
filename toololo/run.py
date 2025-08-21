@@ -173,7 +173,18 @@ class Run:
             if message.tool_calls:
                 for tool_call in message.tool_calls:
                     func_name = tool_call.function.name
-                    func_args = json.loads(tool_call.function.arguments)
+                    
+                    # Handle empty or invalid function arguments
+                    try:
+                        if tool_call.function.arguments.strip():
+                            func_args = json.loads(tool_call.function.arguments)
+                        else:
+                            logger.warning(f"Empty function arguments for {func_name}, using empty dict")
+                            func_args = {}
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Invalid JSON in function arguments for {func_name}: {tool_call.function.arguments}")
+                        logger.error(f"JSON decode error: {e}")
+                        func_args = {}
 
                     # Yield the tool use
                     tool_content = ToolUseContent(func_name, func_args)
