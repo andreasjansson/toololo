@@ -173,35 +173,35 @@ class Run:
 
                 # Process tool calls if present
                 if message.tool_calls:
-                for tool_call in message.tool_calls:
-                    func_name = tool_call.function.name
-                    
-                    # Handle empty or invalid function arguments
-                    try:
-                        if tool_call.function.arguments.strip():
-                            func_args = json.loads(tool_call.function.arguments)
-                        else:
-                            logger.warning(f"Empty function arguments for {func_name}, using empty dict")
+                    for tool_call in message.tool_calls:
+                        func_name = tool_call.function.name
+                        
+                        # Handle empty or invalid function arguments
+                        try:
+                            if tool_call.function.arguments.strip():
+                                func_args = json.loads(tool_call.function.arguments)
+                            else:
+                                logger.warning(f"Empty function arguments for {func_name}, using empty dict")
+                                func_args = {}
+                        except json.JSONDecodeError as e:
+                            logger.error(f"Invalid JSON in function arguments for {func_name}: {tool_call.function.arguments}")
+                            logger.error(f"JSON decode error: {e}")
                             func_args = {}
-                    except json.JSONDecodeError as e:
-                        logger.error(f"Invalid JSON in function arguments for {func_name}: {tool_call.function.arguments}")
-                        logger.error(f"JSON decode error: {e}")
-                        func_args = {}
 
-                    # Yield the tool use
-                    tool_content = ToolUseContent(func_name, func_args)
-                    yield tool_content
-                    tool_use_contents.append((tool_call, tool_content))
+                        # Yield the tool use
+                        tool_content = ToolUseContent(func_name, func_args)
+                        yield tool_content
+                        tool_use_contents.append((tool_call, tool_content))
 
-                    # Create task for parallel execution
-                    if func_name in self.function_map:
-                        func = self.function_map[func_name]
-                        original_func = self.original_function_map[func_name]
-                        task = self._execute_function(func, **func_args)
-                        tool_use_tasks.append((tool_call, task, original_func, True))
-                    else:
-                        error_msg = f"Invalid tool: {func_name}. Valid available tools are: {', '.join(self.function_map.keys())}"
-                        tool_use_tasks.append((tool_call, error_msg, None, False))
+                        # Create task for parallel execution
+                        if func_name in self.function_map:
+                            func = self.function_map[func_name]
+                            original_func = self.original_function_map[func_name]
+                            task = self._execute_function(func, **func_args)
+                            tool_use_tasks.append((tool_call, task, original_func, True))
+                        else:
+                            error_msg = f"Invalid tool: {func_name}. Valid available tools are: {', '.join(self.function_map.keys())}"
+                            tool_use_tasks.append((tool_call, error_msg, None, False))
 
             # Execute all tool calls in parallel if there are any
             if tool_use_tasks:
