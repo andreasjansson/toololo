@@ -107,9 +107,9 @@ class Run:
 
                 # Get response from model
                 logger.debug(f"Making API request for iteration {self.iteration}")
-            max_attempts = 10
-            attempt = 0
-            while attempt < max_attempts:
+                max_attempts = 10
+                attempt = 0
+                while attempt < max_attempts:
                 try:
                     # Prepare messages with system prompt
                     messages = []
