@@ -36,14 +36,24 @@ async def curl(args: list[str]) -> str:
 
 @pytest.mark.asyncio
 async def test_curl_speed_test():
-    client = anthropic.AsyncClient()
+    if not os.environ.get("OPENROUTER_API_KEY"):
+        pytest.skip("OPENROUTER_API_KEY not set")
+        
+    client = openai.AsyncOpenAI(
+        api_key=os.environ.get("OPENROUTER_API_KEY"),
+        base_url="https://openrouter.ai/api/v1",
+        default_headers={
+            "HTTP-Referer": "https://github.com/andreasjansson/toololo",
+            "X-Title": "toololo"
+        }
+    )
 
     prompt = "Do a basic network speed test and analyze the results."
 
     async for output in toololo.Run(
         client,
         prompt,
-        model="claude-3-7-sonnet-latest",
+        model="openai/gpt-5",
         tools=[curl],
     ):
         print(output)
