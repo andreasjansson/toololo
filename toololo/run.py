@@ -60,15 +60,23 @@ class Run:
 
     async def initialize(self) -> None:
         if self.initialized:
+            logger.debug("Already initialized, skipping")
             return
 
-        # Execute all function_to_jsonschema calls in parallel
-        tasks = [
-            function_to_jsonschema(self.client, self.model, func)
-            for func in self.compatible_tools
-        ]
-        self.tool_schemas = await asyncio.gather(*tasks)
-        self.initialized = True
+        logger.info(f"Initializing tool schemas for {len(self.compatible_tools)} functions")
+        try:
+            # Execute all function_to_jsonschema calls in parallel
+            tasks = [
+                function_to_jsonschema(self.client, self.model, func)
+                for func in self.compatible_tools
+            ]
+            self.tool_schemas = await asyncio.gather(*tasks)
+            logger.info(f"Successfully generated {len(self.tool_schemas)} tool schemas")
+            self.initialized = True
+        except Exception as e:
+            logger.error(f"Failed to initialize tool schemas: {e}")
+            logger.error(f"Exception details: {traceback.format_exc()}")
+            raise
 
     def __aiter__(self) -> AsyncIterator[Output]:
         """Return self as an async iterator."""
