@@ -93,8 +93,12 @@ class Run:
 
     async def _generate_outputs(self) -> AsyncIterator[Output]:
         """Generate outputs as an async iterator."""
-        await self.initialize()
-        for self.iteration in range(self.max_iterations):
+        logger.info("Starting output generation")
+        try:
+            await self.initialize()
+            logger.info(f"Beginning iteration loop (max {self.max_iterations})")
+            for self.iteration in range(self.max_iterations):
+                logger.debug(f"Starting iteration {self.iteration}")
             # Process any pending user messages
             if self.pending_user_messages:
                 for message in self.pending_user_messages:
