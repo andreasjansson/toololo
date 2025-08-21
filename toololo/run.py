@@ -203,8 +203,8 @@ class Run:
                             error_msg = f"Invalid tool: {func_name}. Valid available tools are: {', '.join(self.function_map.keys())}"
                             tool_use_tasks.append((tool_call, error_msg, None, False))
 
-            # Execute all tool calls in parallel if there are any
-            if tool_use_tasks:
+                # Execute all tool calls in parallel if there are any
+                if tool_use_tasks:
                 logger.info(f"Executing {len(tool_use_tasks)} tool calls")
                 # Wait for all tasks to complete (or error)
                 tool_results = []
