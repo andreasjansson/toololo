@@ -44,9 +44,12 @@ async def curl(args: list[str]) -> str:
 
 @pytest.mark.asyncio
 async def test_curl_speed_test():
+    logger.info("Starting curl speed test")
     if not os.environ.get("OPENROUTER_API_KEY"):
+        logger.warning("OPENROUTER_API_KEY not set, skipping test")
         pytest.skip("OPENROUTER_API_KEY not set")
         
+    logger.info("Creating OpenRouter client")
     client = openai.AsyncOpenAI(
         api_key=os.environ.get("OPENROUTER_API_KEY"),
         base_url="https://openrouter.ai/api/v1",
@@ -57,14 +60,22 @@ async def test_curl_speed_test():
     )
 
     prompt = "Do a basic network speed test and analyze the results."
+    logger.info(f"Starting toololo Run with prompt: {prompt}")
 
-    async for output in toololo.Run(
-        client,
-        prompt,
-        model="openai/gpt-5",
-        tools=[curl],
-    ):
-        print(output)
+    try:
+        async for output in toololo.Run(
+            client,
+            prompt,
+            model="openai/gpt-5",
+            tools=[curl],
+        ):
+            logger.info(f"Got output: {type(output).__name__}")
+            print(output)
+        logger.info("Curl speed test completed successfully")
+    except Exception as e:
+        logger.error(f"Curl speed test failed: {e}")
+        logger.error(f"Test exception: {traceback.format_exc()}")
+        raise
 
 
 class TowersOfHanoi:
