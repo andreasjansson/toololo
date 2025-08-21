@@ -1,6 +1,7 @@
 import asyncio
 import inspect
 import json
+import logging
 import traceback
 from typing import Any, AsyncIterator, Callable, Optional, cast
 
@@ -8,6 +9,8 @@ import openai
 
 from .function import function_to_jsonschema, hashed_function_name, make_compatible
 from .types import Output, TextContent, ThinkingContent, ToolResult, ToolUseContent
+
+logger = logging.getLogger(__name__)
 
 
 class Run:
