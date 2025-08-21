@@ -3,6 +3,7 @@ import pytest
 import asyncio
 import openai
 import os
+import traceback
 import toololo
 
 # Set up logging for tests
