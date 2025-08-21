@@ -153,23 +153,23 @@ class Run:
 
                 # Process the response
                 message = response.choices[0].message
-            assistant_message_content = message.content
-            
-            logger.debug(f"Iteration {self.iteration} - Content: {assistant_message_content[:100] if assistant_message_content else None}")
-            logger.debug(f"Iteration {self.iteration} - Tool calls: {bool(message.tool_calls)}")
-            logger.debug(f"Iteration {self.iteration} - Finish reason: {response.choices[0].finish_reason}")
-            
-            # Yield reasoning content if present
-            if hasattr(message, 'reasoning') and message.reasoning:
-                yield ThinkingContent(message.reasoning)
-            
-            # Yield text content if present
-            if assistant_message_content:
-                yield TextContent(assistant_message_content)
+                assistant_message_content = message.content
+                
+                logger.debug(f"Iteration {self.iteration} - Content: {assistant_message_content[:100] if assistant_message_content else None}")
+                logger.debug(f"Iteration {self.iteration} - Tool calls: {bool(message.tool_calls)}")
+                logger.debug(f"Iteration {self.iteration} - Finish reason: {response.choices[0].finish_reason}")
+                
+                # Yield reasoning content if present
+                if hasattr(message, 'reasoning') and message.reasoning:
+                    yield ThinkingContent(message.reasoning)
+                
+                # Yield text content if present
+                if assistant_message_content:
+                    yield TextContent(assistant_message_content)
 
-            # Find all tool calls for parallel processing
-            tool_use_tasks = []
-            tool_use_contents = []
+                # Find all tool calls for parallel processing
+                tool_use_tasks = []
+                tool_use_contents = []
 
             # Process tool calls if present
             if message.tool_calls:
