@@ -1,6 +1,7 @@
 import inspect
 import hashlib
 import json
+import logging
 from pathlib import Path
 import re
 from typing import Callable, TypeVar, Awaitable, Union, Any, cast
@@ -8,6 +9,8 @@ from functools import wraps
 import openai
 
 from .function_examples import EXAMPLES
+
+logger = logging.getLogger(__name__)
 
 
 def compute_function_hash(func: Callable[..., Any]) -> str:
