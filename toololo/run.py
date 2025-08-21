@@ -110,7 +110,7 @@ class Run:
                 max_attempts = 10
                 attempt = 0
                 while attempt < max_attempts:
-                try:
+                    try:
                     # Prepare messages with system prompt
                     messages = []
                     if self.system_prompt:
