@@ -205,45 +205,45 @@ class Run:
 
                 # Execute all tool calls in parallel if there are any
                 if tool_use_tasks:
-                logger.info(f"Executing {len(tool_use_tasks)} tool calls")
-                # Wait for all tasks to complete (or error)
-                tool_results = []
-                for i, (tool_call, task_or_error, original_func, is_task) in enumerate(tool_use_tasks):
-                    func_name = original_func.__name__ if original_func else "unknown"
-                    logger.debug(f"Processing tool call {i+1}/{len(tool_use_tasks)}: {func_name}")
-                    
-                    if is_task:
-                        try:
-                            # Execute the task
-                            logger.debug(f"Executing function {func_name}")
-                            result = await task_or_error
-                            result_content = json.dumps(result)
-                            success = True
-                            logger.info(f"Tool call {func_name} succeeded")
-                        except Exception as e:
-                            logger.error(f"Tool call {func_name} failed: {e}")
-                            logger.error(f"Tool call exception: {traceback.format_exc()}")
-                            result_content = "".join(traceback.format_exception(e))
+                    logger.info(f"Executing {len(tool_use_tasks)} tool calls")
+                    # Wait for all tasks to complete (or error)
+                    tool_results = []
+                    for i, (tool_call, task_or_error, original_func, is_task) in enumerate(tool_use_tasks):
+                        func_name = original_func.__name__ if original_func else "unknown"
+                        logger.debug(f"Processing tool call {i+1}/{len(tool_use_tasks)}: {func_name}")
+                        
+                        if is_task:
+                            try:
+                                # Execute the task
+                                logger.debug(f"Executing function {func_name}")
+                                result = await task_or_error
+                                result_content = json.dumps(result)
+                                success = True
+                                logger.info(f"Tool call {func_name} succeeded")
+                            except Exception as e:
+                                logger.error(f"Tool call {func_name} failed: {e}")
+                                logger.error(f"Tool call exception: {traceback.format_exc()}")
+                                result_content = "".join(traceback.format_exception(e))
+                                success = False
+                        else:
+                            # This is already an error message
+                            logger.warning(f"Tool call failed with error: {task_or_error}")
+                            result_content = task_or_error
                             success = False
-                    else:
-                        # This is already an error message
-                        logger.warning(f"Tool call failed with error: {task_or_error}")
-                        result_content = task_or_error
-                        success = False
 
-                    # Yield the tool result
-                    yield ToolResult(success, original_func, result_content)
+                        # Yield the tool result
+                        yield ToolResult(success, original_func, result_content)
 
-                    # Prepare the tool result for the model
-                    tool_result = {
-                        "tool_call_id": tool_call.id,
-                        "role": "tool",
-                        "content": result_content,
-                    }
+                        # Prepare the tool result for the model
+                        tool_result = {
+                            "tool_call_id": tool_call.id,
+                            "role": "tool",
+                            "content": result_content,
+                        }
 
-                    tool_results.append(tool_result)
-                
-                logger.info(f"Completed all {len(tool_use_tasks)} tool calls")
+                        tool_results.append(tool_result)
+                    
+                    logger.info(f"Completed all {len(tool_use_tasks)} tool calls")
 
             # Add the messages for the next iteration
             assistant_msg = {"role": "assistant", "content": assistant_message_content}
