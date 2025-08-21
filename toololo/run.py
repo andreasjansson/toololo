@@ -111,48 +111,48 @@ class Run:
                 attempt = 0
                 while attempt < max_attempts:
                     try:
-                    # Prepare messages with system prompt
-                    messages = []
-                    if self.system_prompt:
-                        messages.append({"role": "system", "content": self.system_prompt})
-                    messages.extend(self.messages)
-                    
-                    # Prepare request parameters
-                    params = {
-                        "model": self.model,
-                        "max_tokens": self.max_tokens,
-                        "messages": messages,
-                    }
-                    
-                    if self.tool_schemas:
-                        params["tools"] = self.tool_schemas
-                        logger.debug(f"Including {len(self.tool_schemas)} tools in request")
+                        # Prepare messages with system prompt
+                        messages = []
+                        if self.system_prompt:
+                            messages.append({"role": "system", "content": self.system_prompt})
+                        messages.extend(self.messages)
                         
-                    if self.reasoning_max_tokens:
-                        params["reasoning"] = {"max_tokens": self.reasoning_max_tokens}
-                        logger.debug(f"Including reasoning with max_tokens={self.reasoning_max_tokens}")
-                    
-                    logger.info(f"Making API call to {self.model} with {len(messages)} messages")
-                    response = await self.client.chat.completions.create(**params)
-                    logger.info("API call successful")
-                    break
-                except openai.APIStatusError as e:
-                    logger.warning(f"API status error on attempt {attempt + 1}/{max_attempts}: {e}")
-                    logger.warning(f"Status code: {e.status_code}, Response: {e.response}")
-                    attempt += 1
-                    if attempt < max_attempts:
-                        logger.info(f"Sleeping 30 seconds before retry...")
-                        await asyncio.sleep(30)
-                    else:
-                        logger.error("Max API attempts reached, giving up")
-                        return
-                except Exception as e:
-                    logger.error(f"Unexpected error during API call: {e}")
-                    logger.error(f"Exception details: {traceback.format_exc()}")
-                    raise
+                        # Prepare request parameters
+                        params = {
+                            "model": self.model,
+                            "max_tokens": self.max_tokens,
+                            "messages": messages,
+                        }
+                        
+                        if self.tool_schemas:
+                            params["tools"] = self.tool_schemas
+                            logger.debug(f"Including {len(self.tool_schemas)} tools in request")
+                            
+                        if self.reasoning_max_tokens:
+                            params["reasoning"] = {"max_tokens": self.reasoning_max_tokens}
+                            logger.debug(f"Including reasoning with max_tokens={self.reasoning_max_tokens}")
+                        
+                        logger.info(f"Making API call to {self.model} with {len(messages)} messages")
+                        response = await self.client.chat.completions.create(**params)
+                        logger.info("API call successful")
+                        break
+                    except openai.APIStatusError as e:
+                        logger.warning(f"API status error on attempt {attempt + 1}/{max_attempts}: {e}")
+                        logger.warning(f"Status code: {e.status_code}, Response: {e.response}")
+                        attempt += 1
+                        if attempt < max_attempts:
+                            logger.info(f"Sleeping 30 seconds before retry...")
+                            await asyncio.sleep(30)
+                        else:
+                            logger.error("Max API attempts reached, giving up")
+                            return
+                    except Exception as e:
+                        logger.error(f"Unexpected error during API call: {e}")
+                        logger.error(f"Exception details: {traceback.format_exc()}")
+                        raise
 
-            # Process the response
-            message = response.choices[0].message
+                # Process the response
+                message = response.choices[0].message
             assistant_message_content = message.content
             
             logger.debug(f"Iteration {self.iteration} - Content: {assistant_message_content[:100] if assistant_message_content else None}")
