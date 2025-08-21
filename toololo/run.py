@@ -155,9 +155,7 @@ class Run:
             message = response.choices[0].message
             assistant_message_content = message.content
             
-            logger.debug(f"Response message content: {assistant_message_content}")
-            logger.debug(f"Response has tool_calls: {bool(message.tool_calls)}")
-            logger.debug(f"Response finish_reason: {response.choices[0].finish_reason}")
+
             
             # Yield reasoning content if present
             if hasattr(message, 'reasoning') and message.reasoning:
