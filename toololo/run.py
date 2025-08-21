@@ -99,11 +99,11 @@ class Run:
             logger.info(f"Beginning iteration loop (max {self.max_iterations})")
             for self.iteration in range(self.max_iterations):
                 logger.debug(f"Starting iteration {self.iteration}")
-            # Process any pending user messages
-            if self.pending_user_messages:
-                for message in self.pending_user_messages:
-                    self.messages.append({"role": "user", "content": message})
-                self.pending_user_messages = []
+                # Process any pending user messages
+                if self.pending_user_messages:
+                    for message in self.pending_user_messages:
+                        self.messages.append({"role": "user", "content": message})
+                    self.pending_user_messages = []
 
             # Get response from model
             logger.debug(f"Making API request for iteration {self.iteration}")
