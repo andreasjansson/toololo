@@ -4,6 +4,7 @@ import json
 import logging
 from pathlib import Path
 import re
+import traceback
 from typing import Callable, TypeVar, Awaitable, Union, Any, cast
 from functools import wraps
 import openai
