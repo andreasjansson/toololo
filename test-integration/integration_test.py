@@ -67,7 +67,7 @@ async def test_curl_speed_test():
         async for output in toololo.Run(
             client,
             prompt,
-            model="openai/gpt-5",
+            model="anthropic/claude-sonnet-4",
             tools=[curl],
         ):
             logger.info(f"Got output: {type(output).__name__}")
@@ -132,7 +132,7 @@ async def test_single_agent_towers_of_hanoi():
                 "content": "Solve this Towers of Hanoi puzzle. The goal is to move all disks from the first tower (index 0) to the third tower (index 2). You can only move one disk at a time, and you cannot place a larger disk on top of a smaller disk.",
             }
         ],
-        model="openai/gpt-5",
+        model="anthropic/claude-sonnet-4",
         tools=[towers.get_state, towers.move, towers.is_complete],
     ):
         print(output)
@@ -235,7 +235,7 @@ async def test_multiagent_tictactoe():
         return toololo.Run(
             client,
             messages=prompt,
-            model="openai/gpt-5",
+            model="anthropic/claude-sonnet-4",
             tools=tools,
             system_prompt=system_prompt,
         )
