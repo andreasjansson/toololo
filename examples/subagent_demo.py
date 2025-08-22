@@ -18,44 +18,10 @@ import tempfile
 import os
 from pathlib import Path
 
-# Mock OpenAI for demo (replace with real client in production)
-from unittest.mock import MagicMock
-
+import openai
 from toololo.lib.subagent import spawn_parallel_agents
 from toololo.lib.files import write_file, list_directory, read_file
 from toololo.lib.shell import shell_command
-
-
-class DemoOpenAIClient:
-    """Demo OpenAI client that provides mock responses for demonstration."""
-    
-    def __init__(self):
-        self.chat = MagicMock()
-        self.call_count = 0
-        
-        # Pre-defined responses for different agents
-        self.responses = [
-            "I'll analyze the project structure and provide insights about the file organization.",
-            "Let me examine the code quality and provide metrics about the Python files.",
-            "I'll review the documentation and assess its completeness and quality.",
-        ]
-    
-    async def create(self, **kwargs):
-        """Mock the OpenAI API call."""
-        response = MagicMock()
-        response.choices = [MagicMock()]
-        
-        if self.call_count < len(self.responses):
-            content = self.responses[self.call_count]
-        else:
-            content = f"Additional analysis response {self.call_count}"
-        
-        response.choices[0].message.content = content
-        response.choices[0].message.tool_calls = None
-        response.choices[0].finish_reason = "stop"
-        
-        self.call_count += 1
-        return response
 
 
 async def main():
