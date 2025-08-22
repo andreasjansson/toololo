@@ -207,30 +207,30 @@ class TestSubagentCore:
         assert result == "Simple: test"
 
 
-class TestProjectHealthAssessment:
-    """Integration test for a creative project health assessment scenario.
+class TestRecursiveCodeReview:
+    """Integration test for recursive subagent code review scenario.
     
-    This scenario demonstrates multiple specialized agents working together to assess
-    the overall health of an open-source project from different perspectives:
-    - Codebase Health Agent: Analyzes code structure and complexity
-    - Community Health Agent: Checks documentation and project maintenance
-    - Infrastructure Agent: Reviews project setup and configuration
-    - Security Auditor Agent: Performs basic security checks
+    This demonstrates a tree structure of agents:
+    - Level 1: Main Coordinator
+    - Level 2: File Review Agents (one per Python file)
+    - Level 3: Function Analysis Agents (spawned by file agents for each function)
+    
+    This shows how subagents can recursively spawn other subagents to handle
+    tasks that naturally decompose into hierarchical subtasks.
     """
     
     @pytest.mark.asyncio
-    async def test_project_health_assessment_pipeline(self, openai_client):
-        """Test a creative scenario: Multi-agent project health assessment.
+    async def test_recursive_code_review_pipeline(self, openai_client):
+        """Test recursive subagents: Coordinator -> File Agents -> Function Agents.
         
-        This simulates a realistic workflow where different specialized agents
-        analyze various aspects of a project simultaneously to provide a 
-        comprehensive health assessment.
+        This demonstrates a realistic tree-structured workflow where agents
+        spawn child agents to handle subtasks, creating a natural hierarchy.
         """
         
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Create a realistic open-source project structure
-            project_dir = Path(tmpdir) / "awesome_project"
-            await self._create_realistic_project(project_dir)
+            # Create a simple multi-file Python project
+            project_dir = Path(tmpdir) / "simple_project"
+            await self._create_simple_code_project(project_dir)
             
             # Define specialized agents for different aspects of project health
             health_assessment_agents = [
