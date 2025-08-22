@@ -364,7 +364,7 @@ class TestRecursiveCodeReview:
     
     async def _create_simple_code_project(self, project_dir: Path):
         """Create a simple Python project with multiple files and functions for recursive review."""
-        project_dir.mkdir(parents=True)
+        project_dir.mkdir(parents=True, exist_ok=True)
         
         # Create simple Python files with multiple functions each
         project_files = {
