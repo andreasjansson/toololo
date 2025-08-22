@@ -128,15 +128,13 @@ def count_lines_in_files(directory: str, file_extension: str = "*.py") -> str:
                 line_count = int(line_result.stdout.strip().split()[0])
                 total_lines += line_count
             
-            return json.dumps({
-                "directory": directory,
-                "file_extension": file_extension,
-                "total_lines": int(total_lines),
-                "file_count": int(file_count),
-                "avg_lines_per_file": round(int(total_lines) / max(1, int(file_count)), 1)
-            }, indent=2)
-        else:
-            return json.dumps({"error": result.stderr}, indent=2)
+        return json.dumps({
+            "directory": directory,
+            "file_extension": file_extension,
+            "total_lines": total_lines,
+            "file_count": file_count,
+            "avg_lines_per_file": round(total_lines / max(1, file_count), 1)
+        }, indent=2)
             
     except Exception as e:
         return json.dumps({"error": str(e)}, indent=2)
