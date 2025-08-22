@@ -107,9 +107,9 @@ async for output in spawn_parallel_agents(client, agents):
         results[category].append(output.output)
 ```
 
-## 🧪 Comprehensive Test Suite
+## 🧪 Comprehensive Integration Test Suite
 
-Created **29 integration tests** covering:
+Created **real integration tests** that use actual OpenAI API calls (no mocks):
 
 ### Tool Testing (5 tests)
 - ✅ Code analysis with metrics extraction  
