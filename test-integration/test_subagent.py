@@ -407,8 +407,6 @@ def sum_list(numbers):
             write_file(str(full_path), content)
         
         print(f"✅ Created simple project with {len(project_files)} files for recursive review")
-        """Create a realistic open-source project structure for testing."""
-        project_dir.mkdir(parents=True)
         
         # Create directory structure
         (project_dir / "src").mkdir()
