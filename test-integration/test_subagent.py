@@ -796,3 +796,207 @@ class TestErrorHandling:
         
         # Should complete quickly with low iteration limit
         assert any(r.is_final for r in results)
+
+
+class TestSubagentWithRun:
+    """Test using subagent functionality through toololo.Run."""
+    
+    @pytest.mark.asyncio
+    async def test_subagent_analysis_tool_in_run(self, openai_client):
+        """Test a tool that uses subagents internally, called through toololo.Run."""
+        
+        async def analyze_project_with_subagents(project_path: str, client: openai.AsyncOpenAI = None) -> str:
+            """Tool that performs project analysis using multiple subagents internally.
+            
+            This tool demonstrates using subagents as part of a larger workflow
+            where the subagent functionality is encapsulated in a tool.
+            """
+            if not client:
+                return "Error: OpenAI client required for analysis"
+            
+            # Create a simple test project
+            with tempfile.TemporaryDirectory() as tmpdir:
+                test_project = Path(tmpdir) / "test_project"
+                test_project.mkdir()
+                
+                # Create sample files
+                write_file(str(test_project / "main.py"), """
+def hello():
+    print("Hello World")
+
+if __name__ == "__main__":
+    hello()
+""")
+                write_file(str(test_project / "README.md"), "# Test Project\nA simple test project.")
+                
+                # Define subagents for analysis
+                agent_specs = [
+                    (
+                        "You are a code structure analyst. Be concise.",
+                        f"Analyze the Python files in {test_project}. Give a brief summary.",
+                        [count_python_files, list_directory]
+                    ),
+                    (
+                        "You are a documentation reviewer. Be concise.",
+                        f"Review the documentation in {test_project}. Give a brief summary.",
+                        [find_readme_files, analyze_file_sizes]
+                    )
+                ]
+                
+                # Collect results from subagents
+                results = []
+                agent_completed = {0: False, 1: False}
+                
+                try:
+                    async for output in spawn_parallel_agents(
+                        client=client,
+                        agent_specs=agent_specs,
+                        model="gpt-4o-mini",
+                        max_iterations=2
+                    ):
+                        if output.is_final:
+                            agent_completed[output.agent_index] = True
+                            if output.error:
+                                results.append(f"Agent {output.agent_index} error: {output.error}")
+                            else:
+                                results.append(f"Agent {output.agent_index} completed successfully")
+                        
+                        # Break when both agents complete
+                        if all(agent_completed.values()):
+                            break
+                    
+                    # Summarize results
+                    successful_agents = sum(1 for completed in agent_completed.values() if completed)
+                    return f"Project analysis completed. {successful_agents}/2 agents successful. Results: {'; '.join(results)}"
+                    
+                except Exception as e:
+                    return f"Subagent analysis failed: {str(e)}"
+        
+        # Use the subagent tool through toololo.Run
+        run = Run(
+            client=openai_client,
+            messages="Analyze a test project using your subagent analysis capabilities.",
+            model="gpt-4o-mini",
+            tools=[analyze_project_with_subagents],
+            system_prompt="You are a project analysis coordinator. Use your subagent analysis tool to analyze projects.",
+            max_iterations=3
+        )
+        
+        # Collect outputs from the run
+        outputs = []
+        async for output in run:
+            outputs.append(output)
+            
+            # Look for successful tool usage
+            if isinstance(output, ToolResult) and output.success:
+                # Verify the tool result indicates subagent usage
+                assert "agents successful" in output.result.lower() or "analysis completed" in output.result.lower()
+                break
+        
+        # Verify we got some outputs and at least one was a tool result
+        assert len(outputs) > 0
+        assert any(isinstance(output, ToolResult) for output in outputs)
+        
+        # Find the tool result and verify it shows subagent usage
+        tool_results = [output for output in outputs if isinstance(output, ToolResult)]
+        assert len(tool_results) > 0
+        
+        # At least one tool result should indicate successful subagent usage
+        successful_tool_results = [tr for tr in tool_results if tr.success]
+        assert len(successful_tool_results) > 0
+    
+    @pytest.mark.asyncio
+    async def test_multi_level_subagent_coordination(self, openai_client):
+        """Test a coordinator agent that manages multiple subagent teams.
+        
+        This demonstrates a more complex scenario where a main agent
+        coordinates multiple subagent groups for different tasks.
+        """
+        
+        async def coordinate_analysis_teams(task_description: str, client: openai.AsyncOpenAI = None) -> str:
+            """Meta-tool that coordinates multiple subagent analysis teams."""
+            if not client:
+                return "Error: OpenAI client required"
+            
+            with tempfile.TemporaryDirectory() as tmpdir:
+                # Create test data
+                project_dir = Path(tmpdir) / "complex_project"
+                project_dir.mkdir()
+                
+                # Create multiple files to analyze
+                write_file(str(project_dir / "app.py"), "def main(): return 'app'")
+                write_file(str(project_dir / "utils.py"), "def helper(): return 'utils'") 
+                write_file(str(project_dir / "test.py"), "def test(): assert True")
+                write_file(str(project_dir / "README.md"), "# Complex Project")
+                write_file(str(project_dir / "config.json"), '{"version": "1.0"}')
+                
+                # Team 1: Code Analysis Team
+                code_team_specs = [
+                    ("You are a Python code analyst. Be brief.", f"Count Python files in {project_dir}", [count_python_files]),
+                    ("You are a complexity analyst. Be brief.", f"Assess code complexity in {project_dir}", [assess_code_complexity])
+                ]
+                
+                # Team 2: Documentation Team  
+                docs_team_specs = [
+                    ("You are a documentation finder. Be brief.", f"Find documentation in {project_dir}", [find_readme_files]),
+                    ("You are a file analyzer. Be brief.", f"Analyze file structure in {project_dir}", [analyze_file_sizes])
+                ]
+                
+                teams_results = []
+                
+                # Run Team 1
+                team1_results = []
+                async for output in spawn_parallel_agents(
+                    client=client, 
+                    agent_specs=code_team_specs,
+                    model="gpt-4o-mini", 
+                    max_iterations=2
+                ):
+                    if output.is_final:
+                        team1_results.append(f"Code team agent {output.agent_index} completed")
+                        if len(team1_results) == 2:  # Both agents done
+                            break
+                
+                teams_results.append(f"Code analysis team: {len(team1_results)} agents completed")
+                
+                # Run Team 2  
+                team2_results = []
+                async for output in spawn_parallel_agents(
+                    client=client,
+                    agent_specs=docs_team_specs, 
+                    model="gpt-4o-mini",
+                    max_iterations=2
+                ):
+                    if output.is_final:
+                        team2_results.append(f"Docs team agent {output.agent_index} completed")
+                        if len(team2_results) == 2:  # Both agents done
+                            break
+                
+                teams_results.append(f"Documentation team: {len(team2_results)} agents completed")
+                
+                return f"Multi-team analysis completed. Results: {'; '.join(teams_results)}"
+        
+        # Use the coordination tool through Run
+        run = Run(
+            client=openai_client,
+            messages="Coordinate a multi-team analysis of a complex project using subagent teams.",
+            model="gpt-4o-mini",
+            tools=[coordinate_analysis_teams],
+            system_prompt="You are a meta-coordinator that manages multiple analysis teams using subagents.",
+            max_iterations=3
+        )
+        
+        # Execute and verify
+        tool_results = []
+        async for output in run:
+            if isinstance(output, ToolResult):
+                tool_results.append(output)
+                if output.success and "multi-team analysis completed" in output.result.lower():
+                    # Found successful coordination
+                    assert "code analysis team" in output.result.lower()
+                    assert "documentation team" in output.result.lower()
+                    break
+        
+        # Verify we got successful tool coordination
+        assert len(tool_results) > 0
+        assert any(tr.success for tr in tool_results)
