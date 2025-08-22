@@ -11,10 +11,6 @@ import openai
 from toololo.lib.subagent import spawn_parallel_agents, SubagentOutput, ParallelSubagents
 from toololo.lib.files import write_file, read_file, list_directory
 from toololo.lib.shell import shell_command
-from toololo.lib.example_tools import (
-    analyze_text_with_ai, analyze_code_file, find_files_with_pattern,
-    count_lines_in_files, create_project_report
-)
 from toololo.types import TextContent, ToolUseContent, ToolResult
 
 
