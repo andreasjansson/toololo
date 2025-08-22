@@ -217,7 +217,7 @@ class TestProjectHealthAssessment:
     """
     
     @pytest.mark.asyncio
-    async def test_project_health_assessment_pipeline(self, mock_openai_client):
+    async def test_project_health_assessment_pipeline(self, openai_client):
         """Test a creative scenario: Multi-agent project health assessment.
         
         This simulates a realistic workflow where different specialized agents
@@ -229,31 +229,6 @@ class TestProjectHealthAssessment:
             # Create a realistic open-source project structure
             project_dir = Path(tmpdir) / "awesome_project"
             await self._create_realistic_project(project_dir)
-            
-            # Set up mock AI responses for each specialized agent
-            mock_responses = [
-                # Codebase Health Agent response
-                self._create_mock_response(
-                    "The codebase shows good structure with moderate complexity. "
-                    "Found well-organized Python modules with reasonable file sizes."
-                ),
-                # Community Health Agent response  
-                self._create_mock_response(
-                    "Project has good documentation coverage with README and docs. "
-                    "Shows signs of active maintenance and clear project description."
-                ),
-                # Infrastructure Agent response
-                self._create_mock_response(
-                    "Infrastructure setup appears standard with requirements.txt and config files. "
-                    "Project structure follows Python best practices."
-                ),
-                # Security Auditor Agent response
-                self._create_mock_response(
-                    "Basic security check shows no obvious vulnerabilities in configuration. "
-                    "Dependencies appear to be reasonably up-to-date."
-                )
-            ]
-            mock_openai_client.set_responses(mock_responses)
             
             # Define specialized agents for different aspects of project health
             health_assessment_agents = [
