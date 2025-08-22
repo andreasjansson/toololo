@@ -4,54 +4,24 @@ import pytest
 import asyncio
 import tempfile
 import json
+import os
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
 
 import openai
 from toololo.lib.subagent import spawn_parallel_agents, SubagentOutput, ParallelSubagents
 from toololo.lib.files import write_file, read_file, list_directory
 from toololo.lib.shell import shell_command
+from toololo.run import Run
 from toololo.types import TextContent, ToolUseContent, ToolResult
 
 
-# Mock OpenAI client for testing
-class MockOpenAI:
-    """Mock OpenAI client for testing."""
-    
-    def __init__(self):
-        self.chat = MagicMock()
-        self.chat.completions = MagicMock()
-        self.call_count = 0
-        self.responses = []
-    
-    def set_responses(self, responses):
-        """Set predefined responses for the mock."""
-        self.responses = responses
-        self.call_count = 0
-    
-    async def create(self, **kwargs):
-        """Mock create method that returns predefined responses."""
-        if self.call_count < len(self.responses):
-            response = self.responses[self.call_count]
-            self.call_count += 1
-            return response
-        
-        # Default response
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = f"Mock AI response {self.call_count}"
-        mock_response.choices[0].message.tool_calls = None
-        mock_response.choices[0].finish_reason = "stop"
-        self.call_count += 1
-        return mock_response
-
-
 @pytest.fixture
-def mock_openai_client():
-    """Create a mock OpenAI client."""
-    client = MockOpenAI()
-    client.chat.completions.create = client.create
-    return client
+def openai_client():
+    """Create a real OpenAI client."""
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        pytest.skip("OPENAI_API_KEY environment variable not set")
+    return openai.AsyncOpenAI(api_key=api_key)
 
 
 # Simple tools for testing (defined inline to keep things simple)
