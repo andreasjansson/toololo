@@ -83,65 +83,73 @@ async def main():
     
     client = openai.AsyncOpenAI(api_key=api_key)
     
-    # Create a sample project for analysis
+    # Create a realistic sample project for analysis
     with tempfile.TemporaryDirectory() as tmpdir:
-        project_dir = Path(tmpdir) / "demo_project"
+        project_dir = Path(tmpdir) / "awesome_project"
         project_dir.mkdir()
         
-        print(f"📁 Created demo project at: {project_dir}")
+        print(f"📁 Creating sample project at: {project_dir.name}")
         
         # Create realistic project structure
         await create_demo_project(project_dir)
         
-        # Define specialized agents
-        agent_specs = [
-            # Agent 1: Structure Analyzer
+        # Define 4 specialized health assessment agents
+        health_agents = [
+            # Agent 1: Codebase Health Specialist
             (
-                "You are a project structure analyst. Your role is to examine project "
-                "organization, directory structure, and file distribution. Provide insights "
-                "about how well the project is organized.",
-                f"Analyze the structure and organization of the project at {project_dir}. "
-                f"Examine the directory layout and file distribution.",
-                [list_directory, find_files_with_pattern, count_lines_in_files]
+                "You are a Codebase Health Specialist. Analyze code structure, "
+                "organization, and quality metrics. Be concise and specific.",
+                f"Analyze the codebase health of {project_dir}. "
+                f"Focus on code organization, file counts, and structure quality.",
+                [count_python_files, check_project_structure, list_directory]
             ),
             
-            # Agent 2: Code Quality Analyst  
+            # Agent 2: Documentation Health Expert
             (
-                "You are a code quality specialist. Your role is to analyze code files "
-                "for metrics, complexity, and best practices. Focus on Python code analysis.",
-                f"Perform a code quality analysis of the Python files in {project_dir}. "
-                f"Examine code structure, functions, classes, and overall quality.",
-                [analyze_code_file, find_files_with_pattern, count_lines_in_files]
+                "You are a Documentation Health Expert. Evaluate documentation "
+                "completeness and quality. Be concise and actionable.",
+                f"Assess the documentation health of {project_dir}. "
+                f"Look for README files, docs, and documentation completeness.",
+                [find_readme_files, list_directory, read_file]
             ),
             
-            # Agent 3: Documentation Analyst
+            # Agent 3: Project Structure Analyst
             (
-                "You are a documentation analyst. Your role is to evaluate project "
-                "documentation for completeness, clarity, and usefulness.",
-                f"Analyze the documentation in {project_dir}. Review README files, "
-                f"comments, and any other documentation for quality and completeness.",
-                [find_files_with_pattern, analyze_text_with_ai]
+                "You are a Project Structure Analyst. Evaluate project organization "
+                "and best practices adherence. Be specific about findings.",
+                f"Evaluate the project structure and organization of {project_dir}. "
+                f"Check for standard directories and file organization patterns.",
+                [check_project_structure, list_directory, count_python_files]
+            ),
+            
+            # Agent 4: Community Health Assessor
+            (
+                "You are a Community Health Assessor. Look for signs of active "
+                "maintenance and community engagement. Be observational.",
+                f"Assess community health indicators in {project_dir}. "
+                f"Look for signs of maintenance, configuration, and project health.",
+                [find_readme_files, list_directory, read_file]
             )
         ]
         
-        print(f"\n🚀 Launching {len(agent_specs)} parallel agents...")
+        print(f"\n🚀 Deploying {len(health_agents)} specialized health assessment agents...")
         
-        # Track results from each agent
-        agent_results = {}
-        agent_names = ["Structure Analyst", "Code Quality Analyst", "Documentation Analyst"]
+        # Track health assessment results
+        health_report = {}
+        agent_names = ["Codebase Health", "Documentation Health", "Structure Analysis", "Community Health"]
         
-        # Run agents in parallel and collect results
+        # Run health assessment agents in parallel
         async for result in spawn_parallel_agents(
             client=client,
-            agent_specs=agent_specs,
-            model="gpt-4",
-            max_iterations=5
+            agent_specs=health_agents,
+            model="gpt-4o-mini",  # Use faster, cheaper model for demo
+            max_iterations=3
         ):
             agent_idx = result.agent_index
             agent_name = agent_names[agent_idx]
             
-            if agent_idx not in agent_results:
-                agent_results[agent_idx] = {
+            if agent_idx not in health_report:
+                health_report[agent_idx] = {
                     "name": agent_name,
                     "outputs": [],
                     "completed": False,
@@ -149,51 +157,59 @@ async def main():
                 }
             
             if result.is_final:
-                agent_results[agent_idx]["completed"] = True
+                health_report[agent_idx]["completed"] = True
                 if result.error:
-                    agent_results[agent_idx]["error"] = result.error
-                    print(f"❌ {agent_name} failed: {result.error}")
+                    health_report[agent_idx]["error"] = result.error
+                    print(f"❌ {agent_name}: Failed - {result.error}")
                 else:
-                    print(f"✅ {agent_name} completed successfully")
+                    print(f"✅ {agent_name}: Assessment completed")
             else:
-                agent_results[agent_idx]["outputs"].append(result.output)
+                health_report[agent_idx]["outputs"].append(result.output)
                 output_type = type(result.output).__name__
                 print(f"📊 {agent_name}: {output_type}")
             
             # Check if all agents completed
-            if all(agent_results.get(i, {}).get("completed", False) for i in range(len(agent_specs))):
+            if all(health_report.get(i, {}).get("completed", False) for i in range(len(health_agents))):
                 break
         
-        print("\n📋 Final Results Summary:")
-        print("-" * 40)
+        # Generate Health Assessment Report
+        print(f"\n🏥 PROJECT HEALTH ASSESSMENT REPORT")
+        print("=" * 50)
         
-        for i, agent_result in agent_results.items():
-            name = agent_result["name"]
-            output_count = len(agent_result["outputs"])
-            status = "✅ Success" if agent_result["completed"] and not agent_result["error"] else "❌ Failed"
+        successful_assessments = 0
+        total_outputs = 0
+        
+        for i, assessment in health_report.items():
+            name = assessment["name"]
+            output_count = len(assessment["outputs"])
+            total_outputs += output_count
             
-            print(f"{name}:")
+            if assessment["completed"] and not assessment["error"]:
+                successful_assessments += 1
+                status = "✅ HEALTHY"
+            else:
+                status = f"⚠️ ISSUES: {assessment.get('error', 'Unknown error')}"
+            
+            print(f"\n{name}:")
             print(f"  Status: {status}")
-            print(f"  Outputs: {output_count}")
-            
-            if agent_result["error"]:
-                print(f"  Error: {agent_result['error']}")
-            
-            # Show some sample outputs
-            if output_count > 0:
-                print(f"  Sample outputs:")
-                for j, output in enumerate(agent_result["outputs"][:2]):  # Show first 2
-                    output_type = type(output).__name__
-                    print(f"    {j+1}. {output_type}")
+            print(f"  Analysis Depth: {output_count} tool outputs")
         
-        # Generate final collaborative report
-        print(f"\n📄 Generating collaborative project report...")
-        report_path = project_dir.parent / "final_report.md"
-        report_result = create_project_report(str(project_dir), str(report_path))
-        print(f"Report: {report_result}")
+        # Overall health score
+        health_score = (successful_assessments / len(health_agents)) * 100
+        print(f"\n🎯 OVERALL PROJECT HEALTH SCORE: {health_score:.0f}%")
+        print(f"📊 Successful Assessments: {successful_assessments}/{len(health_agents)}")
+        print(f"🔧 Total Analysis Operations: {total_outputs}")
         
-        print(f"\n🎉 Demo completed! All {len(agent_specs)} agents finished their analysis.")
-        print(f"📊 Total outputs collected: {sum(len(r['outputs']) for r in agent_results.values())}")
+        if health_score >= 75:
+            print("🌟 PROJECT STATUS: HEALTHY")
+        elif health_score >= 50:
+            print("⚠️ PROJECT STATUS: MODERATE HEALTH")
+        else:
+            print("🚨 PROJECT STATUS: NEEDS ATTENTION")
+        
+        print(f"\n🎉 Multi-agent health assessment completed!")
+        print(f"💡 This demo showed {len(health_agents)} AI agents working in parallel")
+        print(f"   to assess different aspects of project health simultaneously.")
 
 
 async def create_demo_project(project_dir: Path):
