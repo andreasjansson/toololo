@@ -24,10 +24,55 @@ from toololo.lib.files import write_file, list_directory, read_file
 from toololo.lib.shell import shell_command
 
 
+# Simple tools for the demo
+def count_python_files(directory: str) -> str:
+    """Count Python files in a directory."""
+    result = shell_command(f"find {directory} -name '*.py' -type f | wc -l")
+    if result.success:
+        count = int(result.stdout.strip())
+        return f"Found {count} Python files in {directory}"
+    return f"Error counting files: {result.stderr}"
+
+
+def find_readme_files(directory: str) -> str:
+    """Find README files."""
+    result = shell_command(f"find {directory} -iname 'readme*' -type f")
+    if result.success:
+        files = [f.strip() for f in result.stdout.split('\n') if f.strip()]
+        if files:
+            return f"Found {len(files)} README files: {', '.join([Path(f).name for f in files])}"
+        return "No README files found"
+    return f"Error searching: {result.stderr}"
+
+
+def check_project_structure(directory: str) -> str:
+    """Check basic project structure."""
+    structure_score = 0
+    findings = []
+    
+    # Check for common directories
+    common_dirs = ['src', 'lib', 'tests', 'test', 'docs', 'doc']
+    for dirname in common_dirs:
+        if Path(directory, dirname).exists():
+            structure_score += 10
+            findings.append(f"+ Found {dirname}/ directory")
+    
+    # Check for important files
+    important_files = ['README.md', 'README.txt', 'requirements.txt', 'setup.py', 'pyproject.toml']
+    for filename in important_files:
+        if Path(directory, filename).exists():
+            structure_score += 10
+            findings.append(f"+ Found {filename}")
+    
+    return f"Structure score: {structure_score}/100. " + "; ".join(findings[:3])
+
+
 async def main():
     """Main demo function."""
-    print("🏥 Project Health Assessment Demo")
+    print("🏥 Creative Project Health Assessment Demo")
     print("=" * 50)
+    print("This demonstrates multiple specialized AI agents working together")
+    print("to assess different aspects of a project's health.\n")
     
     # Create OpenAI client
     api_key = os.getenv("OPENAI_API_KEY")
