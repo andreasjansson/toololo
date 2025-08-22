@@ -363,6 +363,50 @@ class TestRecursiveCodeReview:
         return functions
     
     async def _create_simple_code_project(self, project_dir: Path):
+        """Create a simple Python project with multiple files and functions for recursive review."""
+        project_dir.mkdir(parents=True)
+        
+        # Create simple Python files with multiple functions each
+        project_files = {
+            "calculator.py": """def add(a, b):
+    \"\"\"Add two numbers.\"\"\"
+    return a + b
+
+def subtract(a, b):
+    \"\"\"Subtract two numbers.\"\"\"
+    return a - b
+
+def multiply(a, b):
+    \"\"\"Multiply two numbers.\"\"\"
+    return a * b
+""",
+            
+            "string_utils.py": """def reverse_string(text):
+    \"\"\"Reverse a string.\"\"\"
+    return text[::-1]
+
+def count_vowels(text):
+    \"\"\"Count vowels in text.\"\"\"
+    vowels = 'aeiouAEIOU'
+    return sum(1 for char in text if char in vowels)
+""",
+            
+            "data_processor.py": """def filter_even(numbers):
+    \"\"\"Filter even numbers from a list.\"\"\"
+    return [n for n in numbers if n % 2 == 0]
+
+def sum_list(numbers):
+    \"\"\"Sum all numbers in a list.\"\"\"
+    return sum(numbers)
+"""
+        }
+        
+        # Write all project files
+        for file_path, content in project_files.items():
+            full_path = project_dir / file_path
+            write_file(str(full_path), content)
+        
+        print(f"✅ Created simple project with {len(project_files)} files for recursive review")
         """Create a realistic open-source project structure for testing."""
         project_dir.mkdir(parents=True)
         
