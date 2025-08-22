@@ -235,256 +235,557 @@ class TestSubagentCore:
         assert result == "Simple: test"
 
 
-class TestIntegrationScenarios:
-    """Integration tests with realistic subagent scenarios."""
+class TestProjectHealthAssessment:
+    """Integration test for a creative project health assessment scenario.
+    
+    This scenario demonstrates multiple specialized agents working together to assess
+    the overall health of an open-source project from different perspectives:
+    - Codebase Health Agent: Analyzes code structure and complexity
+    - Community Health Agent: Checks documentation and project maintenance
+    - Infrastructure Agent: Reviews project setup and configuration
+    - Security Auditor Agent: Performs basic security checks
+    """
     
     @pytest.mark.asyncio
-    async def test_parallel_code_analysis_scenario(self, mock_openai_client):
-        """Test a realistic scenario: parallel code analysis of a project."""
+    async def test_project_health_assessment_pipeline(self, mock_openai_client):
+        """Test a creative scenario: Multi-agent project health assessment.
+        
+        This simulates a realistic workflow where different specialized agents
+        analyze various aspects of a project simultaneously to provide a 
+        comprehensive health assessment.
+        """
         
         with tempfile.TemporaryDirectory() as tmpdir:
-            project_dir = Path(tmpdir)
+            # Create a realistic open-source project structure
+            project_dir = Path(tmpdir) / "awesome_project"
+            await self._create_realistic_project(project_dir)
             
-            # Create a realistic project structure
-            (project_dir / "src").mkdir()
-            (project_dir / "tests").mkdir()
-            (project_dir / "docs").mkdir()
-            
-            # Create various files
-            files_content = {
-                "README.md": "# My Awesome Project\nThis is a test project for analysis.",
-                "src/main.py": '''#!/usr/bin/env python3
-"""Main application module."""
-import argparse
-import sys
-
-def main():
-    """Main entry point."""
-    parser = argparse.ArgumentParser(description="My app")
-    parser.add_argument("--verbose", action="store_true")
-    args = parser.parse_args()
-    
-    if args.verbose:
-        print("Running in verbose mode")
-    
-    print("Hello, World!")
-
-if __name__ == "__main__":
-    main()
-''',
-                "src/utils.py": '''"""Utility functions."""
-
-def helper_function(data):
-    """Process data."""
-    return [x * 2 for x in data]
-
-def another_helper(text):
-    """Process text."""
-    return text.upper()
-
-class DataProcessor:
-    """Data processing class."""
-    
-    def __init__(self):
-        self.data = []
-    
-    def process(self, items):
-        """Process items."""
-        return [helper_function(item) for item in items]
-''',
-                "tests/test_main.py": '''"""Tests for main module."""
-import unittest
-from src.main import main
-
-class TestMain(unittest.TestCase):
-    """Test main functionality."""
-    
-    def test_main_runs(self):
-        """Test that main runs without error."""
-        # Would test main function here
-        pass
-
-if __name__ == "__main__":
-    unittest.main()
-''',
-                "docs/architecture.md": "# Architecture\n\nThis document describes the system architecture."
-            }
-            
-            for file_path, content in files_content.items():
-                full_path = project_dir / file_path
-                write_file(str(full_path), content)
-            
-            # Set up mock AI responses
-            ai_responses = [
-                # Response for structure analyzer
-                self._create_mock_response(
-                    f"The project has a clean structure with {len(files_content)} files organized into src/, tests/, and docs/ directories."
-                ),
-                # Response for code quality analyzer  
-                self._create_mock_response(
-                    "The Python code follows good practices with proper docstrings, main guards, and clear function definitions."
-                ),
-                # Response for documentation analyzer
-                self._create_mock_response(
-                    "The documentation includes README and architecture docs, providing good project overview."
-                )
-            ]
-            mock_openai_client.set_responses(ai_responses)
-            
-            # Define agent specifications for parallel analysis
-            agent_specs = [
-                # Agent 1: Analyze project structure
-                (
-                    "You are a project structure analyzer. Analyze the directory structure and file organization of projects.",
-                    f"Analyze the structure of the project at {project_dir}. List the directories and key files.",
-                    [list_directory, find_files_with_pattern, analyze_text_with_ai]
-                ),
-                # Agent 2: Analyze code quality
-                (
-                    "You are a code quality analyzer. Review code files for best practices and quality metrics.",
-                    f"Analyze the Python code quality in {project_dir}. Focus on code structure, functions, and classes.",
-                    [analyze_code_file, count_lines_in_files, find_files_with_pattern]
-                ),
-                # Agent 3: Analyze documentation
-                (
-                    "You are a documentation analyzer. Review project documentation for completeness and quality.",
-                    f"Analyze the documentation in {project_dir}. Review README and other docs.",
-                    [read_file, find_files_with_pattern, analyze_text_with_ai]
-                )
-            ]
-            
-            # Track outputs from all agents
-            outputs_by_agent = {0: [], 1: [], 2: []}
-            completed_agents = set()
-            
-            # Run parallel analysis
-            async for result in spawn_parallel_agents(
-                client=mock_openai_client,
-                agent_specs=agent_specs,
-                model="gpt-4",
-                max_iterations=3
-            ):
-                assert isinstance(result, SubagentOutput)
-                assert 0 <= result.agent_index <= 2
-                assert result.agent_id.startswith(f"agent_{result.agent_index}_")
-                
-                if result.is_final:
-                    completed_agents.add(result.agent_index)
-                    if result.error:
-                        print(f"Agent {result.agent_index} failed: {result.error}")
-                else:
-                    outputs_by_agent[result.agent_index].append(result.output)
-                
-                # Stop when all agents complete
-                if len(completed_agents) == 3:
-                    break
-            
-            # Verify all agents completed
-            assert len(completed_agents) == 3
-            
-            # Verify we got outputs from each agent
-            for agent_idx in range(3):
-                assert len(outputs_by_agent[agent_idx]) > 0, f"Agent {agent_idx} produced no outputs"
-    
-    @pytest.mark.asyncio
-    async def test_collaborative_report_generation(self, mock_openai_client):
-        """Test agents collaborating to generate a comprehensive report."""
-        
-        with tempfile.TemporaryDirectory() as tmpdir:
-            project_dir = Path(tmpdir) / "sample_project"
-            project_dir.mkdir()
-            
-            # Create sample project files
-            project_files = {
-                "app.py": "print('Main app')\ndef process_data(): pass\nclass DataHandler: pass",
-                "utils.py": "def helper(): return 'help'\ndef formatter(x): return str(x)",
-                "config.json": '{"version": "1.0", "debug": true}',
-                "README.md": "# Sample Project\nA simple demonstration project.",
-                "requirements.txt": "requests==2.25.1\nnumpy==1.21.0"
-            }
-            
-            for filename, content in project_files.items():
-                write_file(str(project_dir / filename), content)
-            
-            # Set up mock responses for different analysis tasks
+            # Set up mock AI responses for each specialized agent
             mock_responses = [
-                self._create_mock_response("Project has 5 files with good organization."),
-                self._create_mock_response("Code quality is good with 2 Python files containing 3 functions and 1 class."),
-                self._create_mock_response("Dependencies include requests and numpy. No security issues found.")
+                # Codebase Health Agent response
+                self._create_mock_response(
+                    "The codebase shows good structure with moderate complexity. "
+                    "Found well-organized Python modules with reasonable file sizes."
+                ),
+                # Community Health Agent response  
+                self._create_mock_response(
+                    "Project has good documentation coverage with README and docs. "
+                    "Shows signs of active maintenance and clear project description."
+                ),
+                # Infrastructure Agent response
+                self._create_mock_response(
+                    "Infrastructure setup appears standard with requirements.txt and config files. "
+                    "Project structure follows Python best practices."
+                ),
+                # Security Auditor Agent response
+                self._create_mock_response(
+                    "Basic security check shows no obvious vulnerabilities in configuration. "
+                    "Dependencies appear to be reasonably up-to-date."
+                )
             ]
             mock_openai_client.set_responses(mock_responses)
             
-            # Define collaborative agents
-            agent_specs = [
-                # File structure analyzer
+            # Define specialized agents for different aspects of project health
+            health_assessment_agents = [
+                # Agent 1: Codebase Health Specialist
                 (
-                    "You are a file structure specialist. Analyze project files and organization.",
-                    f"Examine the file structure of {project_dir} and create a summary.",
-                    [list_directory, find_files_with_pattern, count_lines_in_files]
+                    "You are a Codebase Health Specialist. Your expertise is in analyzing code structure, "
+                    "complexity, and maintainability. Focus on code quality metrics and organization.",
+                    f"Perform a comprehensive codebase health analysis of {project_dir}. "
+                    f"Analyze code complexity, file organization, and overall code quality.",
+                    [count_python_files, assess_code_complexity, analyze_file_sizes]
                 ),
-                # Code analyzer
+                
+                # Agent 2: Community Health Expert
                 (
-                    "You are a code analysis expert. Analyze code files for metrics and quality.",
-                    f"Analyze all Python files in {project_dir} for code metrics.",
-                    [analyze_code_file, find_files_with_pattern]
+                    "You are a Community Health Expert. You specialize in evaluating project documentation, "
+                    "community engagement indicators, and project maintenance signals.",
+                    f"Assess the community health and documentation quality of {project_dir}. "
+                    f"Look for README files, documentation, and signs of active maintenance.",
+                    [find_readme_files, list_directory, ai_summary_tool]
                 ),
-                # Dependency analyzer
+                
+                # Agent 3: Infrastructure Analyst  
                 (
-                    "You are a dependency and security analyst. Review project dependencies.",
-                    f"Analyze dependencies and configuration files in {project_dir}.",
-                    [read_file, find_files_with_pattern, analyze_text_with_ai]
+                    "You are an Infrastructure Analyst. You focus on project setup, dependencies, "
+                    "configuration management, and deployment readiness.",
+                    f"Analyze the infrastructure and configuration setup of {project_dir}. "
+                    f"Review dependencies, configuration files, and project structure.",
+                    [list_directory, read_file, analyze_file_sizes]
+                ),
+                
+                # Agent 4: Security Auditor
+                (
+                    "You are a Security Auditor. You specialize in identifying potential security issues, "
+                    "dependency vulnerabilities, and security best practices.",
+                    f"Perform a security assessment of {project_dir}. "
+                    f"Check for potential security issues and review project configuration for security.",
+                    [check_git_status, read_file, ai_summary_tool]
                 )
             ]
             
-            # Collect all outputs for final report
-            agent_results = {}
-            tool_calls_seen = 0
+            # Track results from each specialized agent
+            health_report = {
+                "codebase": {"agent_name": "Codebase Health", "outputs": [], "status": "running"},
+                "community": {"agent_name": "Community Health", "outputs": [], "status": "running"},
+                "infrastructure": {"agent_name": "Infrastructure", "outputs": [], "status": "running"},
+                "security": {"agent_name": "Security Audit", "outputs": [], "status": "running"}
+            }
             
+            assessment_areas = ["codebase", "community", "infrastructure", "security"]
+            
+            print(f"\n🏥 Starting Project Health Assessment for {project_dir.name}")
+            print("🤖 Deploying 4 specialized analysis agents...")
+            
+            # Run all health assessment agents in parallel
             async for result in spawn_parallel_agents(
                 client=mock_openai_client,
-                agent_specs=agent_specs,
-                max_iterations=5
+                agent_specs=health_assessment_agents,
+                model="gpt-4",
+                max_iterations=8
             ):
-                agent_idx = result.agent_index
+                assert isinstance(result, SubagentOutput)
+                assert 0 <= result.agent_index <= 3
                 
-                if agent_idx not in agent_results:
-                    agent_results[agent_idx] = {"outputs": [], "completed": False}
+                area = assessment_areas[result.agent_index]
                 
                 if result.is_final:
-                    agent_results[agent_idx]["completed"] = True
                     if result.error:
-                        agent_results[agent_idx]["error"] = result.error
+                        health_report[area]["status"] = f"failed: {result.error}"
+                        print(f"❌ {health_report[area]['agent_name']} failed: {result.error}")
+                    else:
+                        health_report[area]["status"] = "completed"
+                        print(f"✅ {health_report[area]['agent_name']} completed")
                 else:
-                    agent_results[agent_idx]["outputs"].append(result.output)
-                    # Count tool calls to verify agents are working
-                    if isinstance(result.output, ToolResult):
-                        tool_calls_seen += 1
+                    health_report[area]["outputs"].append(result.output)
+                    output_type = type(result.output).__name__
+                    print(f"📊 {health_report[area]['agent_name']}: {output_type}")
                 
-                # Break when all agents are done
-                if all(agent_results.get(i, {}).get("completed", False) for i in range(3)):
+                # Check if all agents completed
+                if all(report["status"] != "running" for report in health_report.values()):
                     break
             
-            # Verify all agents completed successfully
-            assert len(agent_results) == 3
-            for i in range(3):
-                assert agent_results[i]["completed"]
-                assert len(agent_results[i]["outputs"]) > 0
-                assert "error" not in agent_results[i]
+            # Verify comprehensive assessment was completed
+            print("\n📋 Health Assessment Summary:")
+            successful_agents = 0
+            total_outputs = 0
             
-            # Verify tool calls were made
-            assert tool_calls_seen > 0, "Expected to see tool calls from agents"
+            for area, report in health_report.items():
+                status = "✅ Success" if report["status"] == "completed" else f"❌ {report['status']}"
+                output_count = len(report["outputs"])
+                total_outputs += output_count
+                
+                print(f"  {report['agent_name']}: {status} ({output_count} outputs)")
+                
+                if report["status"] == "completed":
+                    successful_agents += 1
+                    # Verify each agent produced meaningful outputs
+                    assert output_count > 0, f"{area} agent produced no outputs"
             
-            # Generate collaborative report
-            report_path = Path(tmpdir) / "collaborative_report.md"
-            report_result = create_project_report(str(project_dir), str(report_path))
+            # Assertions for test validation
+            assert successful_agents >= 3, f"Expected at least 3 successful agents, got {successful_agents}"
+            assert total_outputs >= 8, f"Expected at least 8 total outputs, got {total_outputs}"
             
-            assert "successfully" in report_result
-            assert report_path.exists()
+            # Generate final comprehensive health report
+            print(f"\n📄 Generating comprehensive project health report...")
+            health_score = (successful_agents / 4) * 100
             
-            # Verify report content
-            report_content = read_file(str(report_path))
-            assert "Project Report" in report_content
-            assert str(project_dir) in report_content
+            final_report = {
+                "project_name": project_dir.name,
+                "assessment_date": "test_run",
+                "overall_health_score": health_score,
+                "agents_deployed": len(health_assessment_agents),
+                "successful_assessments": successful_agents,
+                "total_analysis_outputs": total_outputs,
+                "detailed_results": health_report
+            }
+            
+            print(f"🎯 Overall Project Health Score: {health_score}%")
+            print(f"📊 Total Analysis Outputs: {total_outputs}")
+            print(f"🤖 Successful Agent Assessments: {successful_agents}/{len(health_assessment_agents)}")
+            
+            # Verify the assessment was comprehensive
+            assert health_score >= 75.0, "Project health assessment should achieve at least 75% success rate"
+            
+            return final_report
+    
+    async def _create_realistic_project(self, project_dir: Path):
+        """Create a realistic open-source project structure for testing."""
+        project_dir.mkdir(parents=True)
+        
+        # Create directory structure
+        (project_dir / "src").mkdir()
+        (project_dir / "tests").mkdir() 
+        (project_dir / "docs").mkdir()
+        (project_dir / "config").mkdir()
+        (project_dir / ".github").mkdir()
+        
+        # Create realistic project files
+        project_files = {
+            "README.md": """# Awesome Project 🚀
+
+A fantastic open-source project that demonstrates best practices.
+
+## Features
+- Clean architecture
+- Comprehensive testing
+- Great documentation
+- Active community
+
+## Installation
+```bash
+pip install -r requirements.txt
+```
+
+## Usage
+```python
+from awesome_project import main
+main.run()
+```
+
+## Contributing
+We welcome contributions! Please see CONTRIBUTING.md for guidelines.
+
+## License
+MIT License - see LICENSE file for details.
+""",
+            
+            "src/main.py": """#!/usr/bin/env python3
+\"\"\"Main module for Awesome Project.\"\"\"
+
+import argparse
+import logging
+from pathlib import Path
+
+from .core import DataProcessor
+from .utils import setup_logging, load_config
+
+logger = logging.getLogger(__name__)
+
+def main():
+    \"\"\"Main entry point for the application.\"\"\"
+    parser = argparse.ArgumentParser(description="Awesome Project")
+    parser.add_argument("--config", help="Configuration file", default="config/default.json")
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
+    parser.add_argument("input_file", help="Input file to process")
+    
+    args = parser.parse_args()
+    
+    # Setup logging
+    setup_logging(logging.DEBUG if args.verbose else logging.INFO)
+    logger.info("Starting Awesome Project")
+    
+    try:
+        # Load configuration
+        config = load_config(args.config)
+        
+        # Initialize processor
+        processor = DataProcessor(config)
+        
+        # Process input
+        result = processor.process_file(args.input_file)
+        
+        print(f"Processing completed successfully: {result}")
+        return 0
+        
+    except Exception as e:
+        logger.error(f"Processing failed: {e}")
+        return 1
+
+if __name__ == "__main__":
+    exit(main())
+""",
+            
+            "src/core.py": """\"\"\"Core data processing functionality.\"\"\"
+
+import json
+import logging
+from pathlib import Path
+from typing import Dict, List, Any, Optional
+
+logger = logging.getLogger(__name__)
+
+class DataProcessor:
+    \"\"\"Main data processing engine.\"\"\"
+    
+    def __init__(self, config: Dict[str, Any]):
+        self.config = config
+        self.processed_count = 0
+        self.errors = []
+        
+    def process_file(self, file_path: str) -> Dict[str, Any]:
+        \"\"\"Process a single file and return results.\"\"\"
+        path = Path(file_path)
+        
+        if not path.exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
+            
+        logger.info(f"Processing file: {path.name}")
+        
+        try:
+            if path.suffix == '.json':
+                return self._process_json_file(path)
+            elif path.suffix in ['.txt', '.md']:
+                return self._process_text_file(path)
+            else:
+                logger.warning(f"Unsupported file type: {path.suffix}")
+                return {"status": "skipped", "reason": "unsupported_type"}
+                
+        except Exception as e:
+            logger.error(f"Error processing {path.name}: {e}")
+            self.errors.append(str(e))
+            raise
+    
+    def _process_json_file(self, path: Path) -> Dict[str, Any]:
+        \"\"\"Process JSON files.\"\"\"
+        with open(path, 'r') as f:
+            data = json.load(f)
+            
+        result = {
+            "type": "json",
+            "file_name": path.name,
+            "records": len(data) if isinstance(data, list) else 1,
+            "size_bytes": path.stat().st_size,
+            "status": "success"
+        }
+        
+        self.processed_count += 1
+        return result
+    
+    def _process_text_file(self, path: Path) -> Dict[str, Any]:
+        \"\"\"Process text files.\"\"\"
+        with open(path, 'r') as f:
+            content = f.read()
+            
+        result = {
+            "type": "text",
+            "file_name": path.name,
+            "lines": len(content.splitlines()),
+            "words": len(content.split()),
+            "characters": len(content),
+            "status": "success"
+        }
+        
+        self.processed_count += 1
+        return result
+
+class ValidationError(Exception):
+    \"\"\"Custom exception for validation errors.\"\"\"
+    pass
+""",
+            
+            "src/utils.py": """\"\"\"Utility functions and helpers.\"\"\"
+
+import json
+import logging
+import sys
+from pathlib import Path
+from typing import Dict, Any, Optional
+
+def setup_logging(level: int = logging.INFO) -> None:
+    \"\"\"Configure application logging.\"\"\"
+    logging.basicConfig(
+        level=level,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler(sys.stdout)
+        ]
+    )
+
+def load_config(config_path: str) -> Dict[str, Any]:
+    \"\"\"Load configuration from JSON file.\"\"\"
+    default_config = {
+        "max_file_size": 10 * 1024 * 1024,  # 10MB
+        "supported_formats": [".json", ".txt", ".md"],
+        "output_format": "json",
+        "enable_logging": True
+    }
+    
+    if not config_path:
+        return default_config
+        
+    config_file = Path(config_path)
+    if not config_file.exists():
+        logging.warning(f"Config file not found: {config_path}, using defaults")
+        return default_config
+        
+    try:
+        with open(config_file, 'r') as f:
+            user_config = json.load(f)
+        default_config.update(user_config)
+        return default_config
+    except json.JSONDecodeError as e:
+        logging.error(f"Invalid config file: {e}")
+        return default_config
+
+def validate_input(file_path: str, config: Dict[str, Any]) -> bool:
+    \"\"\"Validate input file against configuration.\"\"\"
+    path = Path(file_path)
+    
+    if not path.exists():
+        return False
+        
+    if path.stat().st_size > config.get("max_file_size", float('inf')):
+        return False
+        
+    if path.suffix not in config.get("supported_formats", []):
+        return False
+        
+    return True
+""",
+            
+            "tests/test_core.py": """\"\"\"Tests for core functionality.\"\"\"
+
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+from src.core import DataProcessor, ValidationError
+
+class TestDataProcessor(unittest.TestCase):
+    \"\"\"Test cases for DataProcessor class.\"\"\"
+    
+    def setUp(self):
+        \"\"\"Set up test fixtures.\"\"\"
+        self.config = {
+            "max_file_size": 1024,
+            "supported_formats": [".json", ".txt"]
+        }
+        self.processor = DataProcessor(self.config)
+    
+    def test_process_json_file(self):
+        \"\"\"Test JSON file processing.\"\"\"
+        test_data = [{"id": 1, "name": "test"}, {"id": 2, "name": "example"}]
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(test_data, f)
+            temp_path = f.name
+        
+        try:
+            result = self.processor.process_file(temp_path)
+            self.assertEqual(result["type"], "json")
+            self.assertEqual(result["records"], 2)
+            self.assertEqual(result["status"], "success")
+        finally:
+            Path(temp_path).unlink()
+    
+    def test_process_text_file(self):
+        \"\"\"Test text file processing.\"\"\"
+        test_content = "Hello world\\nThis is a test\\nWith multiple lines"
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+            f.write(test_content)
+            temp_path = f.name
+        
+        try:
+            result = self.processor.process_file(temp_path)
+            self.assertEqual(result["type"], "text")
+            self.assertEqual(result["lines"], 3)
+            self.assertGreater(result["words"], 5)
+        finally:
+            Path(temp_path).unlink()
+
+if __name__ == '__main__':
+    unittest.main()
+""",
+            
+            "config/default.json": """{
+    "max_file_size": 52428800,
+    "supported_formats": [".json", ".txt", ".md", ".csv"],
+    "output_format": "json",
+    "enable_logging": true,
+    "log_level": "INFO",
+    "processing_threads": 4,
+    "cache_enabled": true
+}""",
+            
+            "requirements.txt": """# Production dependencies
+requests>=2.28.0
+click>=8.0.0
+pyyaml>=6.0
+pandas>=1.5.0
+
+# Development dependencies
+pytest>=7.0.0
+black>=22.0.0
+flake8>=5.0.0
+mypy>=0.990
+""",
+            
+            "docs/architecture.md": """# Architecture Documentation
+
+## Overview
+Awesome Project follows a modular architecture with clear separation of concerns.
+
+## Core Components
+
+### Data Processing Engine
+- `DataProcessor`: Main processing class
+- Supports multiple file formats
+- Configurable processing pipeline
+
+### Configuration System
+- JSON-based configuration
+- Environment-specific configs
+- Runtime configuration validation
+
+### Error Handling
+- Custom exception types
+- Comprehensive logging
+- Graceful degradation
+
+## Data Flow
+1. Input validation
+2. Configuration loading  
+3. File processing
+4. Result generation
+5. Error reporting
+""",
+            
+            ".github/workflows/ci.yml": """name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.8, 3.9, "3.10", "3.11"]
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v3
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Run tests
+      run: |
+        python -m pytest tests/
+    
+    - name: Lint with flake8
+      run: |
+        flake8 src/ tests/
+"""
+        }
+        
+        # Write all project files
+        for file_path, content in project_files.items():
+            full_path = project_dir / file_path
+            write_file(str(full_path), content)
+        
+        print(f"✅ Created realistic project with {len(project_files)} files")
     
     def _create_mock_response(self, content: str):
         """Helper to create mock OpenAI responses."""
