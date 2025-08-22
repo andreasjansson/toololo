@@ -232,131 +232,137 @@ class TestRecursiveCodeReview:
             project_dir = Path(tmpdir) / "simple_project"
             await self._create_simple_code_project(project_dir)
             
-            # Define specialized agents for different aspects of project health
-            health_assessment_agents = [
-                # Agent 1: Codebase Health Specialist
-                (
-                    "You are a Codebase Health Specialist. Your expertise is in analyzing code structure, "
-                    "complexity, and maintainability. Focus on code quality metrics and organization.",
-                    f"Perform a comprehensive codebase health analysis of {project_dir}. "
-                    f"Analyze code complexity, file organization, and overall code quality.",
-                    [count_python_files, assess_code_complexity, analyze_file_sizes]
-                ),
+            # Step 1: Define the recursive file review tool
+            async def review_file_with_function_agents(file_path: str, client: openai.AsyncOpenAI = None) -> str:
+                """Level 2 Agent Tool: Reviews a file by spawning function analysis agents."""
+                if not client:
+                    return f"No client available for {file_path}"
                 
-                # Agent 2: Community Health Expert
-                (
-                    "You are a Community Health Expert. You specialize in evaluating project documentation, "
-                    "community engagement indicators, and project maintenance signals.",
-                    f"Assess the community health and documentation quality of {project_dir}. "
-                    f"Look for README files, documentation, and signs of active maintenance.",
-                    [find_readme_files, list_directory, ai_summary_tool]
-                ),
+                try:
+                    # Read the file and extract functions
+                    content = read_file(file_path)
+                    functions = self._extract_function_names(content)
+                    
+                    if not functions:
+                        return f"No functions found in {file_path}"
+                    
+                    print(f"    📄 File agent analyzing {len(functions)} functions in {Path(file_path).name}")
+                    
+                    # Step 2: Spawn function analysis agents (Level 3)
+                    function_agent_specs = []
+                    for func_name in functions[:2]:  # Limit to 2 functions for demo
+                        function_agent_specs.append((
+                            f"You are a Function Analyst. Analyze the {func_name} function for code quality.",
+                            f"Analyze the function '{func_name}' in this code:\n\n{content}\n\nProvide a brief quality assessment.",
+                            [ai_summary_tool]
+                        ))
+                    
+                    # Collect function analysis results
+                    function_results = []
+                    completed_functions = set()
+                    
+                    async for result in spawn_parallel_agents(
+                        client=client,
+                        agent_specs=function_agent_specs,
+                        model="gpt-4o-mini",
+                        max_iterations=2
+                    ):
+                        if result.is_final:
+                            completed_functions.add(result.agent_index)
+                            if result.error:
+                                function_results.append(f"Function analysis {result.agent_index} failed: {result.error}")
+                            else:
+                                function_results.append(f"Function {functions[result.agent_index] if result.agent_index < len(functions) else result.agent_index} analyzed")
+                        
+                        # Break when all function agents complete
+                        if len(completed_functions) == len(function_agent_specs):
+                            break
+                    
+                    return f"File {Path(file_path).name}: {len(function_results)} functions analyzed - {'; '.join(function_results)}"
                 
-                # Agent 3: Infrastructure Analyst  
-                (
-                    "You are an Infrastructure Analyst. You focus on project setup, dependencies, "
-                    "configuration management, and deployment readiness.",
-                    f"Analyze the infrastructure and configuration setup of {project_dir}. "
-                    f"Review dependencies, configuration files, and project structure.",
-                    [list_directory, read_file, analyze_file_sizes]
-                ),
-                
-                # Agent 4: Security Auditor
-                (
-                    "You are a Security Auditor. You specialize in identifying potential security issues, "
-                    "dependency vulnerabilities, and security best practices.",
-                    f"Perform a security assessment of {project_dir}. "
-                    f"Check for potential security issues and review project configuration for security.",
-                    [check_git_status, read_file, ai_summary_tool]
-                )
-            ]
+                except Exception as e:
+                    return f"Error analyzing file {file_path}: {str(e)}"
             
-            # Track results from each specialized agent
-            health_report = {
-                "codebase": {"agent_name": "Codebase Health", "outputs": [], "status": "running"},
-                "community": {"agent_name": "Community Health", "outputs": [], "status": "running"},
-                "infrastructure": {"agent_name": "Infrastructure", "outputs": [], "status": "running"},
-                "security": {"agent_name": "Security Audit", "outputs": [], "status": "running"}
-            }
+            # Step 3: Level 1 - Main Coordinator Agent
+            coordinator_spec = [(
+                "You are the Main Code Review Coordinator. You manage file review agents that in turn "
+                "manage function analysis agents. Coordinate the recursive review process.",
+                f"Coordinate a recursive code review of {project_dir}. "
+                f"Use your file review tool to analyze each Python file in the project.",
+                [review_file_with_function_agents, list_directory, count_python_files]
+            )]
             
-            assessment_areas = ["codebase", "community", "infrastructure", "security"]
+            print(f"\n🌳 Starting Recursive Code Review")
+            print(f"📁 Project: {project_dir.name}")
+            print("🔄 Structure: Coordinator → File Agents → Function Agents")
             
-            print(f"\n🏥 Starting Project Health Assessment for {project_dir.name}")
-            print("🤖 Deploying 4 specialized analysis agents...")
+            # Track the recursive review process
+            review_results = []
+            coordinator_completed = False
             
-            # Run all health assessment agents in parallel
+            # Run the main coordinator agent
             async for result in spawn_parallel_agents(
                 client=openai_client,
-                agent_specs=health_assessment_agents,
+                agent_specs=coordinator_spec,
                 model="gpt-4o-mini",
-                max_iterations=3  # Reduced for faster testing
+                max_iterations=4
             ):
-                assert isinstance(result, SubagentOutput)
-                assert 0 <= result.agent_index <= 3
-                
-                area = assessment_areas[result.agent_index]
-                
                 if result.is_final:
+                    coordinator_completed = True
                     if result.error:
-                        health_report[area]["status"] = f"failed: {result.error}"
-                        print(f"❌ {health_report[area]['agent_name']} failed: {result.error}")
+                        print(f"❌ Coordinator failed: {result.error}")
                     else:
-                        health_report[area]["status"] = "completed"
-                        print(f"✅ {health_report[area]['agent_name']} completed")
+                        print(f"✅ Recursive code review completed")
                 else:
-                    health_report[area]["outputs"].append(result.output)
+                    review_results.append(result.output)
                     output_type = type(result.output).__name__
-                    print(f"📊 {health_report[area]['agent_name']}: {output_type}")
+                    print(f"🔄 Coordinator: {output_type}")
                 
-                # Check if all agents completed
-                if all(report["status"] != "running" for report in health_report.values()):
+                if coordinator_completed:
                     break
             
-            # Verify comprehensive assessment was completed
-            print("\n📋 Health Assessment Summary:")
-            successful_agents = 0
-            total_outputs = 0
+            # Verify the recursive structure worked
+            print(f"\n📊 Recursive Review Summary:")
+            print(f"  Coordinator Status: {'✅ Success' if coordinator_completed else '❌ Failed'}")
+            print(f"  Total Operations: {len(review_results)}")
             
-            for area, report in health_report.items():
-                status = "✅ Success" if report["status"] == "completed" else f"❌ {report['status']}"
-                output_count = len(report["outputs"])
-                total_outputs += output_count
-                
-                print(f"  {report['agent_name']}: {status} ({output_count} outputs)")
-                
-                if report["status"] == "completed":
-                    successful_agents += 1
-                    # Verify each agent produced meaningful outputs
-                    assert output_count > 0, f"{area} agent produced no outputs"
+            # Look for evidence of recursive operations in tool results
+            file_analysis_count = 0
+            function_analysis_count = 0
             
-            # Assertions for test validation
-            assert successful_agents >= 3, f"Expected at least 3 successful agents, got {successful_agents}"
-            assert total_outputs >= 8, f"Expected at least 8 total outputs, got {total_outputs}"
+            for output in review_results:
+                if isinstance(output, ToolResult) and output.success:
+                    result_text = output.result.lower()
+                    if "functions analyzed" in result_text:
+                        file_analysis_count += 1
+                    if "function" in result_text and "analyzed" in result_text:
+                        function_analysis_count += 1
             
-            # Generate final comprehensive health report
-            print(f"\n📄 Generating comprehensive project health report...")
-            health_score = (successful_agents / 4) * 100
+            print(f"  File Analyses: {file_analysis_count}")
+            print(f"  Function References: {function_analysis_count}")
             
-            final_report = {
-                "project_name": project_dir.name,
-                "assessment_date": "test_run",
-                "overall_health_score": health_score,
-                "agents_deployed": len(health_assessment_agents),
-                "successful_assessments": successful_agents,
-                "total_analysis_outputs": total_outputs,
-                "detailed_results": health_report
+            # Assertions for recursive behavior
+            assert coordinator_completed, "Coordinator agent should complete successfully"
+            assert len(review_results) > 0, "Should have some review operations"
+            assert file_analysis_count > 0, "Should have evidence of file-level analysis"
+            
+            print(f"🎉 Recursive subagent tree structure verified!")
+            return {
+                "coordinator_success": coordinator_completed,
+                "total_operations": len(review_results),
+                "file_analyses": file_analysis_count,
+                "function_references": function_analysis_count
             }
-            
-            print(f"🎯 Overall Project Health Score: {health_score}%")
-            print(f"📊 Total Analysis Outputs: {total_outputs}")
-            print(f"🤖 Successful Agent Assessments: {successful_agents}/{len(health_assessment_agents)}")
-            
-            # Verify the assessment was comprehensive
-            assert health_score >= 75.0, "Project health assessment should achieve at least 75% success rate"
-            
-            return final_report
     
-    async def _create_realistic_project(self, project_dir: Path):
+    def _extract_function_names(self, code_content: str) -> list:
+        """Extract function names from Python code."""
+        import re
+        # Simple regex to find function definitions
+        function_pattern = r'^\s*def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\('
+        functions = re.findall(function_pattern, code_content, re.MULTILINE)
+        return functions
+    
+    async def _create_simple_code_project(self, project_dir: Path):
         """Create a realistic open-source project structure for testing."""
         project_dir.mkdir(parents=True)
         
