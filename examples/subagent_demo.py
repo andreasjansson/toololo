@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 """
-Demo script showing parallel subagent execution.
+Creative Project Health Assessment Demo
 
-This demonstrates how to use toololo.lib.subagent to run multiple AI agents
-in parallel, each with different specializations and tools.
+This demonstrates a realistic and creative use case for parallel subagents:
+Multiple specialized AI agents working together to assess the overall health
+of an open-source project from different perspectives.
+
+Agents:
+- 🔍 Codebase Health Analyst: Code quality and structure
+- 👥 Community Health Expert: Documentation and maintenance  
+- 🏗️ Infrastructure Specialist: Setup and configuration
+- 🔒 Security Auditor: Security and vulnerability assessment
 """
 
 import asyncio
@@ -15,11 +22,8 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from toololo.lib.subagent import spawn_parallel_agents
-from toololo.lib.files import write_file, list_directory
-from toololo.lib.example_tools import (
-    analyze_code_file, find_files_with_pattern, count_lines_in_files,
-    create_project_report, analyze_text_with_ai
-)
+from toololo.lib.files import write_file, list_directory, read_file
+from toololo.lib.shell import shell_command
 
 
 class DemoOpenAIClient:
