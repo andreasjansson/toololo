@@ -166,22 +166,22 @@ class TestSimpleTools:
 class TestSubagentCore:
     """Test core subagent functionality."""
     
-    def test_parallel_subagents_init(self, mock_openai_client):
+    def test_parallel_subagents_init(self, openai_client):
         """Test ParallelSubagents initialization."""
         manager = ParallelSubagents(
-            client=mock_openai_client,
-            model="gpt-4",
+            client=openai_client,
+            model="gpt-4o-mini",
             max_tokens=1000
         )
         
-        assert manager.client == mock_openai_client
-        assert manager.model == "gpt-4"
+        assert manager.client == openai_client
+        assert manager.model == "gpt-4o-mini"
         assert manager.max_tokens == 1000
         assert manager._agents == []
     
-    def test_bind_client_to_tools(self, mock_openai_client):
+    def test_bind_client_to_tools(self, openai_client):
         """Test client binding to tools."""
-        manager = ParallelSubagents(client=mock_openai_client)
+        manager = ParallelSubagents(client=openai_client)
         
         # Define a tool that needs a client
         def tool_with_client(text: str, client=None):
@@ -198,7 +198,7 @@ class TestSubagentCore:
         
         # Test the bound tool
         result = bound_tools[0]("test")
-        assert "MockOpenAI" in result
+        assert "AsyncOpenAI" in result
         
         # Test the simple tool (unchanged)
         result = bound_tools[1]("test")
