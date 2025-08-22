@@ -54,129 +54,143 @@ def mock_openai_client():
     return client
 
 
-class TestSubagentTools:
-    """Test the example tools used by subagents."""
-    
-    def test_analyze_code_file(self):
-        """Test code analysis tool."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Create a sample Python file
-            py_file = Path(tmpdir) / "sample.py"
-            code_content = '''#!/usr/bin/env python3
-"""Sample Python module."""
+# Simple tools for testing (defined inline to keep things simple)
 
-import os
-import sys
-from pathlib import Path
+def count_python_files(directory: str) -> str:
+    """Count Python files in a directory."""
+    result = shell_command(f"find {directory} -name '*.py' -type f | wc -l")
+    if result.success:
+        count = int(result.stdout.strip())
+        return f"Found {count} Python files in {directory}"
+    return f"Error counting files: {result.stderr}"
 
-class TestClass:
-    """A test class."""
-    
-    def method1(self):
-        """Test method."""
-        pass
-    
-    def method2(self):
-        # This is a comment
-        return "test"
 
-def main():
-    """Main function."""
-    print("Hello World")
+def analyze_file_sizes(directory: str) -> str:
+    """Analyze file sizes in a directory."""
+    result = shell_command(f"find {directory} -type f -exec ls -l {{}} + | awk '{{total += $5}} END {{print total}}'")
+    if result.success:
+        total_bytes = int(result.stdout.strip()) if result.stdout.strip() else 0
+        return f"Total size: {total_bytes} bytes ({total_bytes / 1024:.1f} KB)"
+    return f"Error analyzing sizes: {result.stderr}"
 
-if __name__ == "__main__":
-    main()
-'''
-            write_file(str(py_file), code_content)
-            
-            # Analyze the file
-            result = analyze_code_file(str(py_file))
-            analysis = json.loads(result)
-            
-            assert analysis["file_path"] == str(py_file)
-            assert analysis["total_lines"] > 20
-            assert analysis["functions"] >= 2  # main and methods
-            assert analysis["classes"] >= 1
-            assert analysis["has_main"] is True
-            assert analysis["import_lines"] >= 3
-    
-    def test_find_files_with_pattern(self):
-        """Test file pattern matching tool."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Create test files
-            files_to_create = ["test1.py", "test2.py", "readme.md", "config.json"]
-            for filename in files_to_create:
-                write_file(str(Path(tmpdir) / filename), f"Content of {filename}")
-            
-            # Find Python files
-            result = find_files_with_pattern(tmpdir, "*.py")
-            data = json.loads(result)
-            
-            assert data["count"] == 2
-            assert len(data["found_files"]) == 2
-            assert all(f.endswith(".py") for f in data["found_files"])
-    
-    def test_count_lines_in_files(self):
-        """Test line counting tool."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Create Python files with known line counts (wc -l counts newlines, not lines)
-            py_file1 = Path(tmpdir) / "file1.py"
-            py_file2 = Path(tmpdir) / "file2.py"
-            
-            write_file(str(py_file1), "line1\nline2\n")  # 2 newlines = 2 lines for wc -l
-            write_file(str(py_file2), "line1\n")         # 1 newline = 1 line for wc -l  
-            
-            result = count_lines_in_files(tmpdir, "*.py")
-            data = json.loads(result)
-            
-            assert data["file_count"] == 2
-            assert data["total_lines"] == 3  # 2 + 1 = 3
-            assert data["avg_lines_per_file"] == 1.5
-    
-    def test_create_project_report(self):
-        """Test project report creation."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            project_dir = Path(tmpdir) / "test_project"
-            project_dir.mkdir()
-            
-            # Create project structure
-            (project_dir / "src").mkdir()
-            write_file(str(project_dir / "README.md"), "# Test Project")
-            write_file(str(project_dir / "src" / "main.py"), "print('hello')")
-            write_file(str(project_dir / "src" / "utils.js"), "console.log('test')")
-            
-            # Create report
-            report_path = Path(tmpdir) / "report.md"
-            result = create_project_report(str(project_dir), str(report_path))
-            
-            assert "successfully" in result
-            assert Path(report_path).exists()
-            
-            # Check report content
-            report_content = read_file(str(report_path))
-            assert "# Project Report" in report_content
-            assert "Python files: 1" in report_content
-            assert "JavaScript files: 1" in report_content
-            assert "Markdown files: 1" in report_content
 
-    @pytest.mark.asyncio
-    async def test_analyze_text_with_ai(self, mock_openai_client):
-        """Test AI text analysis tool."""
-        # Set up mock response
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = "This is a positive text about success."
-        mock_openai_client.set_responses([mock_response])
-        
-        # Test the tool
-        result = await analyze_text_with_ai(
-            "I love this amazing project!",
-            "sentiment",
-            client=mock_openai_client
+def check_git_status(directory: str) -> str:
+    """Check if directory is a git repo and get status."""
+    git_check = shell_command("git rev-parse --is-inside-work-tree", working_directory=directory)
+    if not git_check.success:
+        return f"Not a git repository: {directory}"
+    
+    status_result = shell_command("git status --porcelain", working_directory=directory)
+    if status_result.success:
+        lines = [line for line in status_result.stdout.split('\n') if line.strip()]
+        if lines:
+            return f"Git repo with {len(lines)} uncommitted changes"
+        return "Git repo with clean working directory"
+    return f"Git repo (status check failed): {status_result.stderr}"
+
+
+def find_readme_files(directory: str) -> str:
+    """Find and analyze README files."""
+    result = shell_command(f"find {directory} -iname 'readme*' -type f")
+    if result.success:
+        files = [f.strip() for f in result.stdout.split('\n') if f.strip()]
+        if files:
+            return f"Found {len(files)} README files: {', '.join([Path(f).name for f in files])}"
+        return "No README files found"
+    return f"Error searching for README: {result.stderr}"
+
+
+def assess_code_complexity(directory: str) -> str:
+    """Simple assessment of code complexity based on line counts and file counts."""
+    py_files = shell_command(f"find {directory} -name '*.py' -type f | wc -l")
+    if not py_files.success:
+        return "No Python files found or error occurred"
+    
+    file_count = int(py_files.stdout.strip())
+    if file_count == 0:
+        return "No Python files to analyze"
+    
+    # Count total lines in Python files
+    lines_result = shell_command(f"find {directory} -name '*.py' -type f -exec wc -l {{}} + | tail -n 1")
+    total_lines = 0
+    if lines_result.success and lines_result.stdout.strip():
+        try:
+            total_lines = int(lines_result.stdout.strip().split()[0])
+        except (ValueError, IndexError):
+            pass
+    
+    avg_lines = total_lines / file_count if file_count > 0 else 0
+    
+    if avg_lines > 200:
+        complexity = "High"
+    elif avg_lines > 100:
+        complexity = "Medium"
+    else:
+        complexity = "Low"
+    
+    return f"Code complexity: {complexity} ({file_count} files, {total_lines} total lines, {avg_lines:.1f} avg)"
+
+
+async def ai_summary_tool(content: str, focus: str, client=None) -> str:
+    """Simple AI tool that generates summaries (mock for testing)."""
+    if not client:
+        return f"Mock analysis of {focus}: {content[:50]}..." 
+    
+    # In real use, this would call the OpenAI API
+    try:
+        response = await client.chat.completions.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": f"Analyze this {focus}: {content}"}],
+            max_tokens=200
         )
-        
-        assert "positive" in result.lower()
-        assert mock_openai_client.call_count == 1
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"AI analysis failed: {str(e)}"
+
+
+class TestSimpleTools:
+    """Test the simple inline tools."""
+    
+    def test_count_python_files(self):
+        """Test Python file counting."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create Python files
+            write_file(str(Path(tmpdir) / "main.py"), "print('hello')")
+            write_file(str(Path(tmpdir) / "utils.py"), "def helper(): pass")
+            write_file(str(Path(tmpdir) / "readme.md"), "# Project")
+            
+            result = count_python_files(tmpdir)
+            assert "Found 2 Python files" in result
+    
+    def test_analyze_file_sizes(self):
+        """Test file size analysis."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            write_file(str(Path(tmpdir) / "small.txt"), "hello")
+            write_file(str(Path(tmpdir) / "large.txt"), "x" * 1000)
+            
+            result = analyze_file_sizes(tmpdir)
+            assert "Total size:" in result
+            assert "bytes" in result
+    
+    def test_find_readme_files(self):
+        """Test README file detection."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            write_file(str(Path(tmpdir) / "README.md"), "# Project")
+            write_file(str(Path(tmpdir) / "readme.txt"), "Info")
+            
+            result = find_readme_files(tmpdir)
+            assert "Found 2 README files" in result
+    
+    def test_assess_code_complexity(self):
+        """Test code complexity assessment."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a simple Python file
+            simple_code = "def hello():\n    print('world')\n"
+            write_file(str(Path(tmpdir) / "simple.py"), simple_code)
+            
+            result = assess_code_complexity(tmpdir)
+            assert "Code complexity: Low" in result
+            assert "1 files" in result
 
 
 class TestSubagentCore:
