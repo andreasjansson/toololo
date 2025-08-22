@@ -121,6 +121,41 @@ files.write_file("process.sh", script_content)
 result = shell.shell_command("chmod +x process.sh && ./process.sh")
 ```
 
+### Parallel Subagents
+
+```python
+import asyncio
+import openai
+from toololo.lib import spawn_parallel_agents, read_file, shell_command
+
+async def analyze_project():
+    client = openai.AsyncOpenAI(api_key="your-key")
+    
+    # Define specialized agents
+    agent_specs = [
+        (
+            "You are a file structure analyst.",
+            "Analyze the project structure in /path/to/project",
+            [files.list_directory, shell_command]
+        ),
+        (
+            "You are a code quality expert.", 
+            "Review code quality in /path/to/project",
+            [files.read_file, shell_command]
+        )
+    ]
+    
+    # Run agents in parallel
+    async for result in spawn_parallel_agents(client, agent_specs):
+        if result.is_final:
+            print(f"Agent {result.agent_index} completed")
+        else:
+            print(f"Agent {result.agent_index}: {type(result.output).__name__}")
+
+# Run the analysis
+asyncio.run(analyze_project())
+```
+
 ## Error Handling
 
 All functions raise appropriate Python exceptions:
