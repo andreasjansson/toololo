@@ -66,7 +66,7 @@ def analyze_code_file(file_path: str) -> str:
         if file_path.endswith('.py'):
             analysis["functions"] = len([l for l in lines if l.strip().startswith('def ')])
             analysis["classes"] = len([l for l in lines if l.strip().startswith('class ')])
-            analysis["has_main"] = any("if __name__ == '__main__':" in l for l in lines)
+            analysis["has_main"] = any("if __name__" in l and "__main__" in l for l in lines)
         
         return json.dumps(analysis, indent=2)
         
