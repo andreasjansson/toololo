@@ -214,6 +214,28 @@ async def main():
 
 async def create_demo_project(project_dir: Path):
     """Create a realistic demo project structure."""
+    # Create directories
+    (project_dir / "src").mkdir()
+    (project_dir / "tests").mkdir()  
+    (project_dir / "docs").mkdir()
+    
+    # Create essential project files
+    project_files = {
+        "README.md": "# Awesome Project\nA demo project for health assessment.\n\n## Features\n- Clean code\n- Good docs\n- Tests",
+        "src/main.py": "#!/usr/bin/env python3\ndef main():\n    print('Hello World')\n\nif __name__ == '__main__':\n    main()",
+        "src/utils.py": "def helper():\n    return 'help'\n\nclass Utils:\n    def process(self):\n        pass",
+        "tests/test_main.py": "import unittest\n\nclass TestMain(unittest.TestCase):\n    def test_main(self):\n        pass",
+        "requirements.txt": "click>=8.0.0\nrequests>=2.28.0",
+        "docs/README.md": "# Documentation\nProject docs go here."
+    }
+    
+    # Write files
+    for file_path, content in project_files.items():
+        full_path = project_dir / file_path
+        write_file(str(full_path), content)
+    
+    print(f"✅ Created {len(project_files)} files in project structure")
+    """Create a realistic demo project structure."""
     print("🏗️ Creating demo project structure...")
     
     # Create directories
