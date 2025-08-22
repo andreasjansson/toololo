@@ -106,18 +106,27 @@ def count_lines_in_files(directory: str, file_extension: str = "*.py") -> str:
         Line count statistics as JSON string
     """
     try:
-        # Find files and count lines
-        result = shell_command(
-            f"find {directory} -name '{file_extension}' -type f -exec wc -l {{}} + | tail -n 1",
-            working_directory="."
-        )
+        # Get list of files first
+        file_result = shell_command(f"find {directory} -name '{file_extension}' -type f")
+        if not file_result.success or not file_result.stdout.strip():
+            return json.dumps({
+                "directory": directory,
+                "file_extension": file_extension,
+                "total_lines": 0,
+                "file_count": 0,
+                "avg_lines_per_file": 0
+            }, indent=2)
         
-        if result.success:
-            total_lines = result.stdout.strip().split()[0] if result.stdout.strip() else "0"
-            
-            # Also get file count
-            file_result = shell_command(f"find {directory} -name '{file_extension}' -type f | wc -l")
-            file_count = file_result.stdout.strip() if file_result.success else "0"
+        files = [f.strip() for f in file_result.stdout.split('\n') if f.strip()]
+        file_count = len(files)
+        
+        # Count lines in each file and sum
+        total_lines = 0
+        for file_path in files:
+            line_result = shell_command(f"wc -l '{file_path}'")
+            if line_result.success:
+                line_count = int(line_result.stdout.strip().split()[0])
+                total_lines += line_count
             
             return json.dumps({
                 "directory": directory,
