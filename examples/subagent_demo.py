@@ -26,13 +26,17 @@ from toololo.lib.shell import shell_command
 
 async def main():
     """Main demo function."""
-    print("🤖 Parallel Subagent Demo")
+    print("🏥 Project Health Assessment Demo")
     print("=" * 50)
     
-    # Create a mock client (replace with real OpenAI client in production)
-    # client = openai.AsyncOpenAI(api_key="your-api-key")
-    client = DemoOpenAIClient()
-    client.chat.completions.create = client.create
+    # Create OpenAI client
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        print("❌ OPENAI_API_KEY environment variable not set")
+        print("💡 Set your API key: export OPENAI_API_KEY='your-key-here'")
+        return
+    
+    client = openai.AsyncOpenAI(api_key=api_key)
     
     # Create a sample project for analysis
     with tempfile.TemporaryDirectory() as tmpdir:
