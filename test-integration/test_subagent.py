@@ -732,21 +732,11 @@ jobs:
         
         print(f"✅ Created realistic project with {len(project_files)} files")
     
-    def _create_mock_response(self, content: str):
-        """Helper to create mock OpenAI responses."""
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = content
-        mock_response.choices[0].message.tool_calls = None
-        mock_response.choices[0].finish_reason = "stop"
-        return mock_response
-
-
 class TestErrorHandling:
     """Test error handling in subagent scenarios."""
     
     @pytest.mark.asyncio
-    async def test_agent_with_failing_tools(self, mock_openai_client):
+    async def test_agent_with_failing_tools(self, openai_client):
         """Test handling of agents with tools that fail."""
         
         def failing_tool(input_text: str) -> str:
@@ -757,24 +747,20 @@ class TestErrorHandling:
             """A tool that works."""
             return f"Processed: {input_text}"
         
-        # Set up a mock response that would try to use tools
-        mock_openai_client.set_responses([
-            self._create_mock_response("I'll analyze the input using my tools.")
-        ])
-        
         agent_specs = [
             (
-                "You are a test agent with mixed tools.",
-                "Process the text 'test input'",
+                "You are a test agent with mixed tools. Use the working_tool to process text.",
+                "Process the text 'test input' using your available tools",
                 [working_tool, failing_tool]
             )
         ]
         
         results = []
         async for result in spawn_parallel_agents(
-            client=mock_openai_client,
+            client=openai_client,
             agent_specs=agent_specs,
-            max_iterations=3
+            model="gpt-4o-mini",
+            max_iterations=2
         ):
             results.append(result)
             if result.is_final:
@@ -786,26 +772,22 @@ class TestErrorHandling:
         assert final_result.agent_index == 0
     
     @pytest.mark.asyncio  
-    async def test_agent_timeout_scenario(self, mock_openai_client):
+    async def test_agent_timeout_scenario(self, openai_client):
         """Test agent behavior with very low iteration limits."""
-        
-        # Mock response
-        mock_openai_client.set_responses([
-            self._create_mock_response("Starting analysis...")
-        ])
         
         agent_specs = [
             (
-                "You are a simple agent.",
-                "Say hello",
+                "You are a simple agent. Respond briefly.",
+                "Say hello and stop",
                 [lambda: "Hello World"]
             )
         ]
         
         results = []
         async for result in spawn_parallel_agents(
-            client=mock_openai_client,
+            client=openai_client,
             agent_specs=agent_specs,
+            model="gpt-4o-mini",
             max_iterations=1  # Very low limit
         ):
             results.append(result)
@@ -814,12 +796,3 @@ class TestErrorHandling:
         
         # Should complete quickly with low iteration limit
         assert any(r.is_final for r in results)
-    
-    def _create_mock_response(self, content: str):
-        """Helper to create mock OpenAI responses."""
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = content
-        mock_response.choices[0].message.tool_calls = None
-        mock_response.choices[0].finish_reason = "stop"
-        return mock_response
