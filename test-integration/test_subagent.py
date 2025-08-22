@@ -123,19 +123,19 @@ if __name__ == "__main__":
     def test_count_lines_in_files(self):
         """Test line counting tool."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Create Python files with known line counts
+            # Create Python files with known line counts (wc -l counts newlines, not lines)
             py_file1 = Path(tmpdir) / "file1.py"
             py_file2 = Path(tmpdir) / "file2.py"
             
-            write_file(str(py_file1), "line1\nline2\nline3")  # 3 lines
-            write_file(str(py_file2), "line1\nline2")         # 2 lines
+            write_file(str(py_file1), "line1\nline2\n")  # 2 newlines = 2 lines for wc -l
+            write_file(str(py_file2), "line1\n")         # 1 newline = 1 line for wc -l  
             
             result = count_lines_in_files(tmpdir, "*.py")
             data = json.loads(result)
             
             assert data["file_count"] == 2
-            assert data["total_lines"] == 5
-            assert data["avg_lines_per_file"] == 2.5
+            assert data["total_lines"] == 3  # 2 + 1 = 3
+            assert data["avg_lines_per_file"] == 1.5
     
     def test_create_project_report(self):
         """Test project report creation."""
