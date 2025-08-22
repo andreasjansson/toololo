@@ -30,6 +30,16 @@ Returns a `ShellCommandResult` object with:
 - `stderr` - Standard error
 - `execution_time` - Time taken to execute
 
+### `toololo.lib.subagent`
+
+Parallel AI agent execution:
+
+- `spawn_parallel_agents(client, agent_specs, model="gpt-4", max_tokens=8192, max_iterations=50)` - Spawn multiple AI agents that run in parallel
+- `ParallelSubagents` - Class for advanced control over parallel agent execution
+- `SubagentOutput` - Data class containing agent outputs and metadata
+
+Each agent gets its own `(system_prompt, user_prompt, tools)` specification and runs independently. The OpenAI client is automatically bound to tools that need it using `functools.partial`.
+
 ## Usage Examples
 
 ### File Operations
