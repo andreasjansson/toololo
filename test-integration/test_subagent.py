@@ -284,10 +284,10 @@ class TestProjectHealthAssessment:
             
             # Run all health assessment agents in parallel
             async for result in spawn_parallel_agents(
-                client=mock_openai_client,
+                client=openai_client,
                 agent_specs=health_assessment_agents,
-                model="gpt-4",
-                max_iterations=8
+                model="gpt-4o-mini",
+                max_iterations=3  # Reduced for faster testing
             ):
                 assert isinstance(result, SubagentOutput)
                 assert 0 <= result.agent_index <= 3
