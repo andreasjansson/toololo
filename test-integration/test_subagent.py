@@ -332,7 +332,7 @@ class TestRecursiveCodeReview:
             
             for output in review_results:
                 if isinstance(output, ToolResult) and output.success:
-                    result_text = output.result.lower()
+                    result_text = str(output.result_content).lower()
                     if "functions analyzed" in result_text:
                         file_analysis_count += 1
                     if "function" in result_text and "analyzed" in result_text:
