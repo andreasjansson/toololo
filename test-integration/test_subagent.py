@@ -102,18 +102,20 @@ def assess_code_complexity(directory: str) -> str:
 
 
 async def ai_summary_tool(content: str, focus: str, client=None) -> str:
-    """Simple AI tool that generates summaries (mock for testing)."""
+    """AI tool that generates summaries using OpenAI."""
     if not client:
-        return f"Mock analysis of {focus}: {content[:50]}..." 
+        return f"No AI client available. Focus: {focus}, Content preview: {content[:50]}..." 
     
-    # In real use, this would call the OpenAI API
     try:
         response = await client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": f"Analyze this {focus}: {content}"}],
-            max_tokens=200
+            model="gpt-4o-mini",
+            messages=[{
+                "role": "user", 
+                "content": f"Provide a brief analysis of this {focus} (max 2 sentences): {content}"
+            }],
+            max_tokens=100
         )
-        return response.choices[0].message.content
+        return response.choices[0].message.content.strip()
     except Exception as e:
         return f"AI analysis failed: {str(e)}"
 
