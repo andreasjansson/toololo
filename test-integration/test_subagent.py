@@ -206,7 +206,7 @@ async def test_state_temperature_averaging(openai_client):
         print(f"🔄 Main Agent Output: {output_type}")
 
         # Track spawn_agents tool calls
-        if isinstance(output, ToolUseContent) and output.name == "spawn_agents":
+        if isinstance(output, ToolUseContent) and "spawn_agents" in output.name:
             spawn_calls += 1
             print(f"  📡 Spawn call #{spawn_calls}: {len(output.input.get('agent_prompts', []))} agents")
 
