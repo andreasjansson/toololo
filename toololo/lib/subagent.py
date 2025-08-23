@@ -28,8 +28,8 @@ class ParallelSubagents:
     def __init__(
         self,
         client: openai.AsyncOpenAI,
-        tools: list[Callable[..., Any]] = None,
-        model: str = "gpt-4",
+        tools: list[Callable[..., Any]] | None = None,
+        model: str = "openai/gpt-5-mini",
         max_tokens: int = 8192,
         reasoning_max_tokens: Optional[int] = None,
         max_iterations: int = 50
@@ -47,16 +47,16 @@ class ParallelSubagents:
         self,
         agent_prompts: list[str] | list[tuple[str, str]],
         system_prompt: str | list[str] = ""
-    ) -> AsyncIterator[SubagentOutput]:
-        """Spawn multiple subagents and yield their outputs as they come.
+    ) -> list[str]:
+        """Spawn multiple subagents and return their final assistant messages.
         
         Args:
             agent_prompts: List of prompts, or list of (system_prompt, prompt) tuples
             system_prompt: Default system prompt(s) to use. If string, used for all agents.
                          If list, must match length of agent_prompts (ignored for tuples).
             
-        Yields:
-            SubagentOutput containing outputs from each subagent as they execute
+        Returns:
+            List of final assistant message contents from each completed agent
         """
         logger.info(f"Spawning {len(agent_prompts)} parallel subagents")
         
