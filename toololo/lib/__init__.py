@@ -10,7 +10,7 @@ from .files import (
     make_directory, rename_file, list_directory
 )
 from .shell import shell_command, ShellCommandResult
-from .subagent import SubagentOutput, ParallelSubagents
+from .subagent import ParallelSubagents
 
 __all__ = [
     'files', 'shell', 'subagent',
