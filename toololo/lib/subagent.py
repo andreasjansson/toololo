@@ -164,10 +164,13 @@ class ParallelSubagents:
         async for agent_index, output in iterate_outputs(agents):
             # Collect final assistant messages (TextContent outputs)
             if isinstance(output, TextContent):
+                logger.debug(f"Agent {agent_index} TextContent type: {type(output.content)}, value: {repr(output.content[:100])}")
                 final_messages.append(output.content)
                 logger.debug(f"Agent {agent_index} produced text: {output.content[:100]}...")
         
         logger.info(f"Collected {len(final_messages)} final messages from spawned agents")
+        logger.debug(f"Final messages types: {[type(msg) for msg in final_messages[:5]]}")
+        logger.debug(f"Final messages preview: {[repr(msg) for msg in final_messages[:5]]}")
         return final_messages
     
 
