@@ -230,10 +230,10 @@ async def test_state_temperature_averaging(openai_client):
     # Run the main state agent using Run
     run = Run(
         client=openai_client,
-        messages="Compute the average temperature for the state of California",
-        model="openai/gpt-oss-20b",
+        messages="Compute the average temperature for the state of California using the spawn_agents tool to delegate work to subagents",
+        model="openai/gpt-4o-mini",
         tools=tools,
-        system_prompt="You are a temperature coordinator. When you need to get temperatures for multiple areas, use spawn_agents to create parallel agents. Each agent will handle one area.",
+        system_prompt="You are a temperature coordinator. You MUST use spawn_agents to delegate temperature computation to specialized subagents. Do not compute temperatures directly - always spawn subagents to handle temperature calculations for different areas.",
         max_iterations=15
     )
 
