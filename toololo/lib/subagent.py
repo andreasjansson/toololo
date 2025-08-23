@@ -17,81 +17,31 @@ async def iterate_outputs(agents: list[Run]) -> AsyncIterator[tuple[int, Output]
     if not agents:
         return
     
-    # Create async iterators for each agent
-    agent_iterators = {i: agent.__aiter__() for i, agent in enumerate(agents)}
-    active_agents = set(range(len(agents)))
-    running_tasks = {}
-    
     logger.info(f"Starting parallel execution of {len(agents)} agents")
     
-    # Start initial tasks
-    for agent_idx in active_agents:
-        if agent_idx not in running_tasks:
-            agent_iter = agent_iterators[agent_idx]
-            task = asyncio.create_task(agent_iter.__anext__())
-            running_tasks[agent_idx] = task
+    try:
+        import aiostream
+    except ImportError:
+        raise ImportError("aiostream is required for parallel agent execution. Install with: pip install aiostream")
     
-    while active_agents:
-        if not running_tasks:
-            break
-        
-        # Wait for at least one task to complete
-        done, pending = await asyncio.wait(
-            running_tasks.values(),
-            return_when=asyncio.FIRST_COMPLETED
-        )
-        
-        # Process completed tasks
-        for task in done:
-            # Find which agent this task belongs to
-            agent_idx = None
-            for idx, t in running_tasks.items():
-                if t == task:
-                    agent_idx = idx
-                    break
-            
-            if agent_idx is None:
-                continue
-                
-            # Remove completed task
-            del running_tasks[agent_idx]
-            
-            try:
-                output = await task
+    # Create tagged streams that include the agent index
+    async def tagged_stream(agent_idx: int, agent: Run):
+        try:
+            async for output in agent:
                 yield agent_idx, output
                 logger.debug(f"Agent {agent_idx} produced output: {type(output).__name__}")
-                
-                # Start next task for this agent if still active
-                if agent_idx in active_agents:
-                    agent_iter = agent_iterators[agent_idx]
-                    next_task = asyncio.create_task(agent_iter.__anext__())
-                    running_tasks[agent_idx] = next_task
-                
-            except StopAsyncIteration:
-                # Agent finished
-                active_agents.remove(agent_idx)
-                logger.info(f"Agent {agent_idx} completed")
-                
-            except Exception as e:
-                # Agent errored
-                active_agents.remove(agent_idx)
-                logger.error(f"Agent {agent_idx} failed: {e}")
+        except Exception as e:
+            logger.error(f"Agent {agent_idx} failed: {e}")
+        finally:
+            logger.info(f"Agent {agent_idx} completed")
     
-    # Cancel any remaining tasks
-    for task in running_tasks.values():
-        task.cancel()
+    # Merge all agent streams
+    streams = [tagged_stream(i, agent) for i, agent in enumerate(agents)]
+    async with aiostream.stream.merge(*streams).stream() as merged:
+        async for agent_idx, output in merged:
+            yield agent_idx, output
     
     logger.info("All agents completed")
-
-
-@dataclass
-class SubagentOutput:
-    """Output from a subagent with metadata."""
-    agent_index: int
-    agent_id: str
-    output: Output
-    is_final: bool = False
-    error: Optional[str] = None
 
 
 class ParallelSubagents:
@@ -102,6 +52,7 @@ class ParallelSubagents:
         client: openai.AsyncOpenAI,
         tools: list[Callable[..., Any]] | None = None,
         model: str = "openai/gpt-5-mini",
+        system_prompt: str | None = None,
         max_tokens: int = 8192,
         reasoning_max_tokens: Optional[int] = None,
         max_iterations: int = 50
@@ -109,6 +60,7 @@ class ParallelSubagents:
         self.client = client
         self.tools = tools or []
         self.model = model
+        self.system_prompt = system_prompt
         self.max_tokens = max_tokens
         self.reasoning_max_tokens = reasoning_max_tokens
         self.max_iterations = max_iterations
@@ -116,14 +68,11 @@ class ParallelSubagents:
     async def spawn_agents(
         self,
         agent_prompts: list[str],
-        system_prompt: str = ""
     ) -> list[str]:
         """Spawn multiple subagents and return their final assistant messages.
         
         Args:
-            agent_prompts: List of prompts, or list of (system_prompt, prompt) tuples
-            system_prompt: Default system prompt(s) to use. If string, used for all agents.
-                         If list, must match length of agent_prompts (ignored for tuples).
+            agent_prompts: List of prompts
             
         Returns:
             List of final assistant message contents from each completed agent
@@ -131,7 +80,7 @@ class ParallelSubagents:
         # Runtime validation to catch common mistake
         if isinstance(agent_prompts, str):
             raise TypeError(f"agent_prompts must be a list of strings, not a string. Got: {repr(agent_prompts)}")
-        
+
         if not isinstance(agent_prompts, list):
             raise TypeError(f"agent_prompts must be a list of strings, got {type(agent_prompts)}")
         
@@ -151,7 +100,7 @@ class ParallelSubagents:
                 messages=prompt,
                 model=self.model,
                 tools=self.tools,
-                system_prompt=system_prompt,
+                system_prompt=self.system_prompt,
                 max_tokens=self.max_tokens,
                 reasoning_max_tokens=self.reasoning_max_tokens,
                 max_iterations=self.max_iterations
