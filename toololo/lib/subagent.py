@@ -18,37 +18,54 @@ async def iterate_outputs(agents: list[Run]) -> AsyncIterator[tuple[int, Output]
         return
     
     # Create async iterators for each agent
-    agent_iterators = [(i, agent.__aiter__()) for i, agent in enumerate(agents)]
+    agent_iterators = {i: agent.__aiter__() for i, agent in enumerate(agents)}
     active_agents = set(range(len(agents)))
+    running_tasks = {}
     
     logger.info(f"Starting parallel execution of {len(agents)} agents")
     
-    while active_agents:
-        # Create tasks to get next output from each active agent
-        pending_tasks = {}
-        
-        for agent_idx in list(active_agents):
-            agent_iter = agent_iterators[agent_idx][1]
+    # Start initial tasks
+    for agent_idx in active_agents:
+        if agent_idx not in running_tasks:
+            agent_iter = agent_iterators[agent_idx]
             task = asyncio.create_task(agent_iter.__anext__())
-            pending_tasks[task] = agent_idx
-        
-        if not pending_tasks:
+            running_tasks[agent_idx] = task
+    
+    while active_agents:
+        if not running_tasks:
             break
         
-        # Wait for at least one agent to produce output
+        # Wait for at least one task to complete
         done, pending = await asyncio.wait(
-            pending_tasks.keys(),
+            running_tasks.values(),
             return_when=asyncio.FIRST_COMPLETED
         )
         
         # Process completed tasks
         for task in done:
-            agent_idx = pending_tasks[task]
+            # Find which agent this task belongs to
+            agent_idx = None
+            for idx, t in running_tasks.items():
+                if t == task:
+                    agent_idx = idx
+                    break
+            
+            if agent_idx is None:
+                continue
+                
+            # Remove completed task
+            del running_tasks[agent_idx]
             
             try:
                 output = await task
                 yield agent_idx, output
                 logger.debug(f"Agent {agent_idx} produced output: {type(output).__name__}")
+                
+                # Start next task for this agent if still active
+                if agent_idx in active_agents:
+                    agent_iter = agent_iterators[agent_idx]
+                    next_task = asyncio.create_task(agent_iter.__anext__())
+                    running_tasks[agent_idx] = next_task
                 
             except StopAsyncIteration:
                 # Agent finished
@@ -59,10 +76,10 @@ async def iterate_outputs(agents: list[Run]) -> AsyncIterator[tuple[int, Output]
                 # Agent errored
                 active_agents.remove(agent_idx)
                 logger.error(f"Agent {agent_idx} failed: {e}")
-        
-        # Cancel pending tasks
-        for task in pending:
-            task.cancel()
+    
+    # Cancel any remaining tasks
+    for task in running_tasks.values():
+        task.cancel()
     
     logger.info("All agents completed")
 
