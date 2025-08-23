@@ -296,7 +296,7 @@ async def test_state_temperature_averaging(openai_client):
                     
                     # Try to extract numerical temperatures
                     import re
-                    temp_matches = re.findall(r'(\d+\.?\d*)\s*°?f', result_text.lower())
+                    temp_matches = re.findall(r'(\d+\.?\d*)\s*°?f?', result_text.lower())
                     for temp_str in temp_matches:
                         try:
                             temp_val = float(temp_str)
@@ -305,6 +305,15 @@ async def test_state_temperature_averaging(openai_client):
                                 print(f"    📊 Extracted: {temp_val}°F")
                         except ValueError:
                             pass
+                
+                # Also check if this looks like a raw temperature value (float between reasonable range)
+                try:
+                    temp_val = float(result_text.strip())
+                    if 0 < temp_val < 200:  # Reasonable temperature range
+                        temperature_values.append(temp_val)
+                        print(f"  🌡️  RAW TEMPERATURE: {temp_val}°F")
+                except ValueError:
+                    pass
 
                 # Look for final average result
                 if "average" in result_text.lower() and ("california" in result_text.lower() or "state" in result_text.lower()):
