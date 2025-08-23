@@ -153,78 +153,7 @@ class ParallelSubagents:
         logger.info(f"Collected {len(final_messages)} final messages from spawned agents")
         return final_messages
     
-    async def _run_agents_parallel(self) -> AsyncIterator[SubagentOutput]:
-        """Run all agents in parallel and yield outputs."""
-        if not self._agents:
-            return
-        
-        # Create async iterators for each agent
-        agent_iterators = [(i, agent.__aiter__()) for i, agent in enumerate(self._agents)]
-        active_agents = set(range(len(self._agents)))
-        
-        logger.info(f"Starting parallel execution of {len(self._agents)} agents")
-        
-        while active_agents:
-            # Create tasks to get next output from each active agent
-            pending_tasks = {}
-            
-            for agent_idx in list(active_agents):
-                agent_iter = agent_iterators[agent_idx][1]
-                task = asyncio.create_task(agent_iter.__anext__())
-                pending_tasks[task] = agent_idx
-            
-            if not pending_tasks:
-                break
-            
-            # Wait for at least one agent to produce output
-            done, pending = await asyncio.wait(
-                pending_tasks.keys(),
-                return_when=asyncio.FIRST_COMPLETED
-            )
-            
-            # Process completed tasks
-            for task in done:
-                agent_idx = pending_tasks[task]
-                agent_id = self._agent_ids[agent_idx]
-                
-                try:
-                    output = await task
-                    yield SubagentOutput(
-                        agent_index=agent_idx,
-                        agent_id=agent_id,
-                        output=output,
-                        is_final=False
-                    )
-                    logger.debug(f"Agent {agent_idx} produced output: {type(output).__name__}")
-                    
-                except StopAsyncIteration:
-                    # Agent finished
-                    active_agents.remove(agent_idx)
-                    yield SubagentOutput(
-                        agent_index=agent_idx,
-                        agent_id=agent_id,
-                        output=None,
-                        is_final=True
-                    )
-                    logger.info(f"Agent {agent_idx} ({agent_id}) completed")
-                    
-                except Exception as e:
-                    # Agent errored
-                    active_agents.remove(agent_idx)
-                    yield SubagentOutput(
-                        agent_index=agent_idx,
-                        agent_id=agent_id,
-                        output=None,
-                        is_final=True,
-                        error=str(e)
-                    )
-                    logger.error(f"Agent {agent_idx} ({agent_id}) failed: {e}")
-            
-            # Cancel pending tasks
-            for task in pending:
-                task.cancel()
-        
-        logger.info("All agents completed")
+
 
 
 
