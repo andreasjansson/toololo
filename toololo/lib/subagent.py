@@ -95,8 +95,6 @@ class ParallelSubagents:
         self.max_tokens = max_tokens
         self.reasoning_max_tokens = reasoning_max_tokens
         self.max_iterations = max_iterations
-        self._agents: list[Run] = []
-        self._agent_ids: list[str] = []
     
     async def spawn_agents(
         self,
