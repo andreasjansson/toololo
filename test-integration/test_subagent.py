@@ -253,7 +253,8 @@ async def test_state_temperature_averaging(openai_client):
             agent_prompts = output.input.get('agent_prompts', [])
             print(f"\n📡 Spawn call #{spawn_calls}: {len(agent_prompts)} agents")
             for i, prompt in enumerate(agent_prompts):
-                print(f"    Agent {i}: {prompt[:60]}...")
+                prompt_str = str(prompt)[:60]
+                print(f"    Agent {i}: {prompt_str}...")
         
         # Track spawn_agents results
         elif isinstance(output, ToolResult) and output.success and output.func and "spawn_agents" in output.func.__name__:
