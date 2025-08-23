@@ -198,53 +198,15 @@ async def test_state_temperature_averaging(openai_client):
         latlng_temperature,
     ]
 
-    # Create ParallelSubagents manager
+    # Create ParallelSubagents manager and add its spawn method as a tool
     subagent_manager = ParallelSubagents(
         client=openai_client, 
         tools=tools,
-        #model="openai/gpt-5-mini",
-        model="openai/gpt-oss-20b",
+        model="openai/gpt-4o-mini",
         max_iterations=5
     )
-    
-    # Create a wrapper that consumes the async iterator and returns a simple result
-    async def spawn_agents_tool(
-        agent_prompts: list[str],
-        system_prompt: str = ""
-    ) -> str:
-        """Tool wrapper for spawn_agents that consumes the async iterator and returns results."""
-        final_messages = []
-        agent_statuses = {}
-        
-        try:
-            async for output in subagent_manager.spawn_agents(agent_prompts, system_prompt):
-                if output.is_final:
-                    if not output.error:
-                        agent_statuses[output.agent_index] = "completed"
-                    else:
-                        agent_statuses[output.agent_index] = f"failed: {output.error}"
-                else:
-                    # Collect final assistant messages (TextContent outputs)
-                    if isinstance(output.output, TextContent):
-                        final_messages.append(f"Agent {output.agent_index}: {output.output.content}")
-            
-            # Return the final assistant messages from completed agents
-            completed_agents = sum(1 for status in agent_statuses.values() if status == "completed")
-            failed_agents = len(agent_statuses) - completed_agents
-            
-            result = f"Spawned {len(agent_prompts)} agents. Completed: {completed_agents}, Failed: {failed_agents}.\n"
-            
-            if final_messages:
-                result += "Final responses:\n" + "\n".join(final_messages)
-            else:
-                result += "No final responses collected."
-            
-            return result
-            
-        except Exception as e:
-            return f"Error spawning agents: {str(e)}"
-    
-    tools.append(spawn_agents_tool)
+    spawn_agents = subagent_manager.spawn_agents
+    tools.append(spawn_agents)
 
     print(f"\n🌡️  Starting State Temperature Averaging with Run + spawn_agents tool")
     print(f"📍 State: California")
