@@ -10,7 +10,8 @@ setup(
     version="0.5.0",
     packages=find_packages(),
     install_requires=[
-        "openai>=1.0.0,<2"
+        "openai>=1.0.0,<2",
+        "aiostream>=0.4.0"
     ],
     long_description=long_description,
     long_description_content_type="text/markdown",
