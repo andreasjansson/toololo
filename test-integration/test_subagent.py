@@ -208,8 +208,8 @@ async def test_state_temperature_averaging(openai_client):
     
     # Create a wrapper that consumes the async iterator and returns a simple result
     async def spawn_agents_tool(
-        agent_prompts: list[str] | list[tuple[str, str]],
-        system_prompt: str | list[str] = ""
+        agent_prompts: list[str],
+        system_prompt: str = ""
     ) -> str:
         """Tool wrapper for spawn_agents that consumes the async iterator and returns results."""
         results = []
