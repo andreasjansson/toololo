@@ -84,7 +84,7 @@ class ParallelSubagents:
         self,
         client: openai.AsyncOpenAI,
         tools: list[Callable[..., Any]] | None = None,
-        model: str = "openai/gpt-5-mini",
+        model: str = "gpt-4o-mini",
         max_tokens: int = 8192,
         reasoning_max_tokens: Optional[int] = None,
         max_iterations: int = 50
