@@ -132,18 +132,7 @@ class ParallelSubagents:
         
         # Create agents
         agents = []
-        for i, item in enumerate(agent_prompts):
-            # Handle different input formats
-            if isinstance(item, tuple):
-                # (system_prompt, prompt) tuple
-                sys_prompt, prompt = item
-            else:
-                # Just a prompt string
-                prompt = item
-                if isinstance(system_prompt, list):
-                    sys_prompt = system_prompt[i] if i < len(system_prompt) else ""
-                else:
-                    sys_prompt = system_prompt
+        for i, prompt in enumerate(agent_prompts):
             
             # Create the agent with stored tools
             agent = Run(
