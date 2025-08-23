@@ -268,43 +268,59 @@ async def test_state_temperature_averaging(openai_client):
     # Run and collect outputs
     async for output in run:
         outputs.append(output)
-        output_type = type(output).__name__
-        print(f"🔄 Main Agent Output: {output_type}")
+        
+        # Show actual tool calls and results
+        if isinstance(output, ThinkingContent):
+            print(f"🤔 Thinking: {output.content[:100]}...")
+            
+        elif isinstance(output, ToolUseContent):
+            print(f"🔧 Tool Call: {output.name}")
+            print(f"   Parameters: {output.input}")
+            
+            # Track spawn_agents tool calls
+            if "spawn_agents" in output.name:
+                spawn_calls += 1
+                agent_prompts = output.input.get('agent_prompts', [])
+                print(f"  📡 Spawn call #{spawn_calls}: {len(agent_prompts)} agents")
+                for i, prompt in enumerate(agent_prompts):
+                    print(f"    Agent {i}: {prompt[:50]}...")
 
-        # Track spawn_agents tool calls
-        if isinstance(output, ToolUseContent) and "spawn_agents" in output.name:
-            spawn_calls += 1
-            print(f"  📡 Spawn call #{spawn_calls}: {len(output.input.get('agent_prompts', []))} agents")
+        elif isinstance(output, ToolResult):
+            if output.success:
+                result_text = str(output.content)
+                print(f"✅ Tool Result: {result_text[:200]}...")
+                
+                # Look for temperature data
+                if "temperature" in result_text.lower():
+                    print(f"  🌡️  FOUND TEMPERATURE DATA!")
+                    
+                    # Try to extract numerical temperatures
+                    import re
+                    temp_matches = re.findall(r'(\d+\.?\d*)\s*°?f', result_text.lower())
+                    for temp_str in temp_matches:
+                        try:
+                            temp_val = float(temp_str)
+                            if 0 < temp_val < 200:  # Reasonable temperature range
+                                temperature_values.append(temp_val)
+                                print(f"    📊 Extracted: {temp_val}°F")
+                        except ValueError:
+                            pass
 
-        # Look for temperature data in tool results
-        elif isinstance(output, ToolResult) and output.success:
-            result_text = str(output.content).lower()
+                # Look for final average result
+                if "average" in result_text.lower() and ("california" in result_text.lower() or "state" in result_text.lower()):
+                    final_result = output.content
+                    print(f"  🎯 FINAL STATE RESULT: {final_result}")
+            else:
+                print(f"❌ Tool Failed: {output.content}")
 
-            # Look for temperature mentions
-            if "temperature" in result_text and ("°f" in result_text or "degrees" in result_text):
-                print(f"  📊 Temperature result: {output.content[:100]}...")
-
-                # Try to extract numerical temperatures
-                import re
-                temp_matches = re.findall(r'(\d+\.?\d*)\s*°?f', result_text)
-                for temp_str in temp_matches:
-                    try:
-                        temp_val = float(temp_str)
-                        if 0 < temp_val < 200:  # Reasonable temperature range
-                            temperature_values.append(temp_val)
-                    except ValueError:
-                        pass
-
-            # Look for final average result
-            if "average" in result_text and ("california" in result_text or "state" in result_text):
-                final_result = output.content
-                print(f"  🎯 Final State Result: {final_result}")
-
-        # Look for text content with temperatures
         elif isinstance(output, TextContent):
+            text_preview = output.content[:100].replace('\n', ' ')
+            print(f"💬 Text: {text_preview}...")
+            
+            # Look for temperatures in text
             content_lower = output.content.lower()
             if "temperature" in content_lower and ("california" in content_lower or "average" in content_lower):
-                print(f"  💬 Text with temperature: {output.content[:100]}...")
+                print(f"  🌡️  TEXT HAS TEMPERATURE INFO!")
                 final_result = output.content
 
     # Verify the recursive structure worked
