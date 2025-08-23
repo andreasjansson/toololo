@@ -2,12 +2,11 @@
 
 import pytest
 import os
-from typing import List, Tuple
 
 import openai
 from toololo.lib.subagent import ParallelSubagents
 from toololo.run import Run
-from toololo.types import TextContent, ToolUseContent, ToolResult, ThinkingContent
+from toololo.types import TextContent, ToolUseContent, ToolResult
 
 
 @pytest.fixture
