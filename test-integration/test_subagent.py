@@ -6,6 +6,7 @@ from typing import List, Tuple
 
 import openai
 from toololo.lib.subagent import ParallelSubagents
+from toololo.run import Run
 from toololo.types import TextContent, ToolUseContent, ToolResult
 
 
