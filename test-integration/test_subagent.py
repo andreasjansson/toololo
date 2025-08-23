@@ -258,22 +258,28 @@ async def test_state_temperature_averaging(openai_client):
         
         # Track spawn_agents results
         elif isinstance(output, ToolResult) and output.success and output.func and "spawn_agents" in output.func.__name__:
-            result_text = str(output.content)
-            print(f"✅ Spawn result: {len(output.content)} final messages from subagents")
-            for i, msg in enumerate(output.content):
-                preview = msg[:80].replace('\n', ' ')
-                print(f"    Agent {i}: {preview}...")
-                
-                # Extract temperatures for analysis
-                import re
-                temp_matches = re.findall(r'(\d+\.?\d*)\s*°?f?', msg.lower())
-                for temp_str in temp_matches:
-                    try:
-                        temp_val = float(temp_str)
-                        if 20 < temp_val < 120:  # Reasonable temperature range
-                            temperature_values.append(temp_val)
-                    except ValueError:
-                        pass
+            # Debug what we actually got
+            print(f"✅ Spawn result type: {type(output.content)}")
+            print(f"✅ Spawn result value: {repr(output.content)}")
+            
+            if isinstance(output.content, list):
+                print(f"✅ Spawn result: {len(output.content)} final messages from subagents")
+                for i, msg in enumerate(output.content):
+                    preview = str(msg)[:80].replace('\n', ' ')
+                    print(f"    Agent {i}: {preview}...")
+                    
+                    # Extract temperatures for analysis
+                    import re
+                    temp_matches = re.findall(r'(\d+\.?\d*)\s*°?f?', str(msg).lower())
+                    for temp_str in temp_matches:
+                        try:
+                            temp_val = float(temp_str)
+                            if 20 < temp_val < 120:  # Reasonable temperature range
+                                temperature_values.append(temp_val)
+                        except ValueError:
+                            pass
+            else:
+                print(f"❌ ERROR: Expected list but got {type(output.content)}: {output.content}")
 
         elif isinstance(output, TextContent):
             text_preview = output.content[:80].replace('\n', ' ')
