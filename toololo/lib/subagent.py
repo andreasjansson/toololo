@@ -94,9 +94,22 @@ class ParallelSubagents:
             self._agents.append(agent)
             logger.info(f"Created subagent {i} ({agent_id}) with {len(self.tools)} tools")
         
-        # Run all agents in parallel and yield outputs as they come
+        # Run all agents in parallel and collect final messages
+        final_messages = []
         async for output in self._run_agents_parallel():
-            yield output
+            if output.is_final:
+                if not output.error:
+                    logger.info(f"Agent {output.agent_index} completed successfully")
+                else:
+                    logger.error(f"Agent {output.agent_index} failed: {output.error}")
+            else:
+                # Collect final assistant messages (TextContent outputs)
+                if isinstance(output.output, TextContent):
+                    final_messages.append(output.output.content)
+                    logger.debug(f"Agent {output.agent_index} produced text: {output.output.content[:100]}...")
+        
+        logger.info(f"Collected {len(final_messages)} final messages from spawned agents")
+        return final_messages
     
     async def _run_agents_parallel(self) -> AsyncIterator[SubagentOutput]:
         """Run all agents in parallel and yield outputs."""
