@@ -115,8 +115,8 @@ class ParallelSubagents:
     
     async def spawn_agents(
         self,
-        agent_prompts: list[str] | list[tuple[str, str]],
-        system_prompt: str | list[str] = ""
+        agent_prompts: list[str],
+        system_prompt: str = ""
     ) -> list[str]:
         """Spawn multiple subagents and return their final assistant messages.
         
