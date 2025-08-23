@@ -12,6 +12,61 @@ from ..types import Output, TextContent
 logger = logging.getLogger(__name__)
 
 
+async def iterate_outputs(agents: list[Run]) -> AsyncIterator[tuple[int, Output]]:
+    """Iterate over outputs from multiple agents running in parallel."""
+    if not agents:
+        return
+    
+    # Create async iterators for each agent
+    agent_iterators = [(i, agent.__aiter__()) for i, agent in enumerate(agents)]
+    active_agents = set(range(len(agents)))
+    
+    logger.info(f"Starting parallel execution of {len(agents)} agents")
+    
+    while active_agents:
+        # Create tasks to get next output from each active agent
+        pending_tasks = {}
+        
+        for agent_idx in list(active_agents):
+            agent_iter = agent_iterators[agent_idx][1]
+            task = asyncio.create_task(agent_iter.__anext__())
+            pending_tasks[task] = agent_idx
+        
+        if not pending_tasks:
+            break
+        
+        # Wait for at least one agent to produce output
+        done, pending = await asyncio.wait(
+            pending_tasks.keys(),
+            return_when=asyncio.FIRST_COMPLETED
+        )
+        
+        # Process completed tasks
+        for task in done:
+            agent_idx = pending_tasks[task]
+            
+            try:
+                output = await task
+                yield agent_idx, output
+                logger.debug(f"Agent {agent_idx} produced output: {type(output).__name__}")
+                
+            except StopAsyncIteration:
+                # Agent finished
+                active_agents.remove(agent_idx)
+                logger.info(f"Agent {agent_idx} completed")
+                
+            except Exception as e:
+                # Agent errored
+                active_agents.remove(agent_idx)
+                logger.error(f"Agent {agent_idx} failed: {e}")
+        
+        # Cancel pending tasks
+        for task in pending:
+            task.cancel()
+    
+    logger.info("All agents completed")
+
+
 @dataclass
 class SubagentOutput:
     """Output from a subagent with metadata."""
