@@ -202,7 +202,8 @@ async def test_state_temperature_averaging(openai_client):
     subagent_manager = ParallelSubagents(
         client=openai_client, 
         tools=tools,
-        model="openai/gpt-5-mini",
+        #model="openai/gpt-5-mini",
+        model="openai/gpt-oss-20b",
         max_iterations=5
     )
     
@@ -212,33 +213,33 @@ async def test_state_temperature_averaging(openai_client):
         system_prompt: str = ""
     ) -> str:
         """Tool wrapper for spawn_agents that consumes the async iterator and returns results."""
-        results = []
+        final_messages = []
         agent_statuses = {}
         
         try:
             async for output in subagent_manager.spawn_agents(agent_prompts, system_prompt):
                 if output.is_final:
-                    agent_statuses[output.agent_index] = "completed" if not output.error else f"failed: {output.error}"
+                    if not output.error:
+                        agent_statuses[output.agent_index] = "completed"
+                    else:
+                        agent_statuses[output.agent_index] = f"failed: {output.error}"
                 else:
-                    # Look for temperature-related outputs
-                    if isinstance(output.output, ToolResult) and output.output.success:
-                        result_str = str(output.output.content)
-                        if "temperature" in result_str.lower() and "°f" in result_str.lower():
-                            results.append(f"Agent {output.agent_index}: {result_str}")
+                    # Collect final assistant messages (TextContent outputs)
+                    if isinstance(output.output, TextContent):
+                        final_messages.append(f"Agent {output.agent_index}: {output.output.content}")
             
-            # Summarize results
+            # Return the final assistant messages from completed agents
             completed_agents = sum(1 for status in agent_statuses.values() if status == "completed")
             failed_agents = len(agent_statuses) - completed_agents
             
-            summary = f"Spawned {len(agent_prompts)} agents. "
-            summary += f"Completed: {completed_agents}, Failed: {failed_agents}. "
+            result = f"Spawned {len(agent_prompts)} agents. Completed: {completed_agents}, Failed: {failed_agents}.\n"
             
-            if results:
-                summary += f"Temperature results: {'; '.join(results)}"
+            if final_messages:
+                result += "Final responses:\n" + "\n".join(final_messages)
             else:
-                summary += "No temperature results collected."
+                result += "No final responses collected."
             
-            return summary
+            return result
             
         except Exception as e:
             return f"Error spawning agents: {str(e)}"
@@ -253,7 +254,7 @@ async def test_state_temperature_averaging(openai_client):
     run = Run(
         client=openai_client,
         messages="Compute the average temperature for the state of California",
-        model="openai/gpt-5-mini",
+        model="openai/gpt-oss-20b",
         tools=tools,
         system_prompt="You are a temperature coordinator. When you need to get temperatures for multiple areas, use spawn_agents to create parallel agents. Each agent will handle one area.",
         max_iterations=15
