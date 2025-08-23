@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import openai
 
 from ..run import Run
-from ..types import Output
+from ..types import Output, TextContent
 
 logger = logging.getLogger(__name__)
 
