@@ -112,6 +112,72 @@ def latlng_temperature(lat: float, lng: float) -> float:
     return base_temp + lat_adjustment + lng_adjustment
 
 
+def test_deterministic_tools():
+    """Test that the deterministic tools work correctly."""
+    # Test area_to_subareas
+    ca_counties = area_to_subareas("California")
+    assert len(ca_counties) == 3
+    assert "Los Angeles County" in ca_counties
+    
+    la_cities = area_to_subareas("Los Angeles County")
+    assert len(la_cities) == 3
+    assert "Los Angeles" in la_cities
+    
+    # Test is_city
+    assert is_city("Los Angeles") == True
+    assert is_city("Los Angeles County") == False
+    assert is_city("California") == False
+    
+    # Test city_to_latlng
+    la_coords = city_to_latlng("Los Angeles")
+    assert isinstance(la_coords, tuple)
+    assert len(la_coords) == 2
+    assert isinstance(la_coords[0], float)
+    assert isinstance(la_coords[1], float)
+    
+    # Test error handling
+    try:
+        city_to_latlng("Not A City")
+        assert False, "Should have raised ValueError"
+    except ValueError as e:
+        assert "Unknown city" in str(e)
+    
+    try:
+        area_to_subareas("Not An Area")
+        assert False, "Should have raised ValueError"  
+    except ValueError as e:
+        assert "Unknown area" in str(e)
+    
+    # Test latlng_temperature
+    temp1 = latlng_temperature(25.0, -80.0)  # Miami-like (south, east)
+    temp2 = latlng_temperature(45.0, -120.0)  # Seattle-like (north, west)
+    assert isinstance(temp1, float)
+    assert isinstance(temp2, float)
+    assert temp1 > temp2, "Southern/Eastern locations should be warmer"
+
+
+def test_temperature_progression():
+    """Test that temperature increases as we go south and east."""
+    # Test north to south (latitude decrease = temperature increase)
+    north_temp = latlng_temperature(40.0, -100.0)
+    south_temp = latlng_temperature(30.0, -100.0)
+    assert south_temp > north_temp, "Southern locations should be warmer"
+    
+    # Test west to east (longitude increase = temperature increase)
+    west_temp = latlng_temperature(35.0, -120.0)
+    east_temp = latlng_temperature(35.0, -80.0)
+    assert east_temp > west_temp, "Eastern locations should be warmer"
+    
+    # Test actual city temperatures make sense
+    la_temp = latlng_temperature(*CITY_COORDINATES["Los Angeles"])
+    miami_temp = latlng_temperature(*CITY_COORDINATES["Miami"])
+    houston_temp = latlng_temperature(*CITY_COORDINATES["Houston"])
+    
+    # Miami should be warmest (furthest south and east)
+    assert miami_temp > la_temp
+    assert miami_temp > houston_temp
+
+
 @pytest.mark.asyncio
 async def test_state_temperature_averaging(openai_client):
     """Test recursive temperature averaging using Run with spawn_agents as a tool.
