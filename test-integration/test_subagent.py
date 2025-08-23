@@ -13,10 +13,10 @@ from toololo.types import TextContent, ToolUseContent, ToolResult
 @pytest.fixture
 def openai_client():
     """Create a real OpenAI client."""
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        pytest.skip("OPENAI_API_KEY environment variable not set")
-    return openai.AsyncOpenAI(api_key=api_key)
+    return openai.AsyncOpenAI(
+        api_key=os.environ["OPENROUTER_API_KEY"],
+        base_url="https://openrouter.ai/api/v1"
+    )
 
 
 # Deterministic tools for temperature averaging task
@@ -175,11 +175,11 @@ async def test_state_temperature_averaging(openai_client):
 
         # Look for temperature data in tool results
         elif isinstance(output, ToolResult) and output.success:
-            result_text = str(output.result_content).lower()
+            result_text = str(output.content).lower()
 
             # Look for temperature mentions
             if "temperature" in result_text and ("°f" in result_text or "degrees" in result_text):
-                print(f"  📊 Temperature result: {output.result_content[:100]}...")
+                print(f"  📊 Temperature result: {output.content[:100]}...")
 
                 # Try to extract numerical temperatures
                 import re
@@ -194,7 +194,7 @@ async def test_state_temperature_averaging(openai_client):
 
             # Look for final average result
             if "average" in result_text and ("california" in result_text or "state" in result_text):
-                final_result = output.result_content
+                final_result = output.content
                 print(f"  🎯 Final State Result: {final_result}")
 
         # Look for text content with temperatures
