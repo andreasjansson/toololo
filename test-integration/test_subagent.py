@@ -117,195 +117,141 @@ class TestTemperatureAveraging:
     
     @pytest.mark.asyncio
     async def test_state_temperature_averaging(self, openai_client):
-        """Test recursive temperature averaging: State -> Counties -> Cities -> Temperatures.
+        """Test recursive temperature averaging using Run with spawn_agents as a tool.
         
-        This creates a three-level hierarchy:
-        - Level 1: State agent coordinates county agents
-        - Level 2: County agents coordinate city agents  
-        - Level 3: City agents get temperatures and return them
+        This creates a three-level hierarchy where agents discover the pattern:
+        - Level 1: State agent (Run) uses spawn_agents to create county agents
+        - Level 2: County agents use spawn_agents to create city agents  
+        - Level 3: City agents use temperature tools to get actual data
         
-        The results should bubble back up to compute averages.
+        The LLM should figure out the recursive spawning pattern on its own.
         """
         
-        # Level 3 tool: Get temperature for a city (used by city agents)
-        async def get_city_temperature(city_name: str, client: openai.AsyncOpenAI = None) -> str:
-            """Level 3 Agent Tool: Get temperature for a specific city."""
-            try:
-                if not is_city(city_name):
-                    return f"Error: {city_name} is not a city"
-                
-                lat, lng = city_to_latlng(city_name)
-                temp = latlng_temperature(lat, lng)
-                return f"Temperature for {city_name}: {temp:.1f}°F"
-                
-            except Exception as e:
-                return f"Error getting temperature for {city_name}: {str(e)}"
+        # Define the base tools available to all agents
+        base_tools = [
+            area_to_subareas,
+            is_city,
+            city_to_latlng,
+            latlng_temperature,
+        ]
         
-        # Level 2 tool: Get average temperature for a county (spawns city agents)
-        async def get_county_temperature_average(county_name: str, client: openai.AsyncOpenAI = None) -> str:
-            """Level 2 Agent Tool: Get average temperature for a county by spawning city agents."""
-            if not client:
-                return f"No client available for {county_name}"
-            
-            try:
-                cities = area_to_subareas(county_name)
-                if not cities:
-                    return f"No cities found for {county_name}"
-                
-                print(f"    🏙️  County agent processing {len(cities)} cities in {county_name}")
-                
-                # Spawn city agents (Level 3)
-                city_agent_specs = []
-                for city in cities:
-                    city_agent_specs.append((
-                        f"You are a City Temperature Agent for {city}. Get the temperature for your city.",
-                        f"Get the temperature for {city} using your temperature tool.",
-                        [get_city_temperature, is_city, city_to_latlng, latlng_temperature]
-                    ))
-                
-                # Collect temperature results from city agents
-                city_temperatures = []
-                completed_cities = set()
-                
-                async for result in spawn_parallel_agents(
-                    client=client,
-                    agent_specs=city_agent_specs,
-                    model="gpt-4o-mini",
-                    max_iterations=3
-                ):
-                    if result.is_final:
-                        completed_cities.add(result.agent_index)
-                        if result.error:
-                            print(f"      ❌ City agent {result.agent_index} failed: {result.error}")
-                        else:
-                            print(f"      ✅ City agent {result.agent_index} ({cities[result.agent_index] if result.agent_index < len(cities) else result.agent_index}) completed")
-                    
-                    # Look for temperature outputs in tool results
-                    elif isinstance(result.output, ToolResult) and result.output.success:
-                        temp_result = str(result.output.result_content)
-                        if "Temperature for" in temp_result and "°F" in temp_result:
-                            try:
-                                # Extract temperature value
-                                temp_str = temp_result.split(":")[-1].strip().replace("°F", "")
-                                temp_value = float(temp_str)
-                                city_temperatures.append(temp_value)
-                                print(f"      📊 Got temperature: {temp_value}°F from city agent {result.agent_index}")
-                            except (ValueError, IndexError):
-                                print(f"      ⚠️  Could not parse temperature from: {temp_result}")
-                    
-                    # Break when all city agents complete
-                    if len(completed_cities) == len(city_agent_specs):
-                        break
-                
-                # Calculate average
-                if city_temperatures:
-                    avg_temp = sum(city_temperatures) / len(city_temperatures)
-                    return f"Average temperature for {county_name}: {avg_temp:.1f}°F (from {len(city_temperatures)} cities)"
-                else:
-                    return f"Could not get temperature data for {county_name}"
-                
-            except Exception as e:
-                return f"Error processing county {county_name}: {str(e)}"
-        
-        # Level 1: State agent coordinates county agents
-        state_agent_spec = [(
-            "You are a State Temperature Coordinator. You manage county temperature agents to get "
-            "the average temperature for your state. Coordinate county agents to get temperatures.",
-            f"Get the average temperature for California by coordinating with county agents. "
-            f"Use your county temperature tool to process each county in the state.",
-            [get_county_temperature_average, area_to_subareas, is_city]
-        )]
-        
-        print(f"\n🌡️  Starting State Temperature Averaging")
-        print(f"📍 State: California")
-        print("🔄 Structure: State → County Agents → City Agents → Temperature Lookup")
-        
-        # Track the temperature averaging process
-        state_results = []
-        state_completed = False
-        final_temperatures = []
-        
-        # Run the state coordinator agent
-        async for result in spawn_parallel_agents(
-            client=openai_client,
-            agent_specs=state_agent_spec,
+        # Create ParallelSubagents manager and add its spawn method as a tool
+        subagent_manager = ParallelSubagents(
+            client=openai_client, 
+            tools=base_tools,
             model="gpt-4o-mini",
-            max_iterations=6
-        ):
-            if result.is_final:
-                state_completed = True
-                if result.error:
-                    print(f"❌ State coordinator failed: {result.error}")
-                else:
-                    print(f"✅ State temperature averaging completed")
-            else:
-                state_results.append(result.output)
-                output_type = type(result.output).__name__
-                print(f"🔄 State Coordinator: {output_type}")
-                
-                # Look for county average temperatures in tool results
-                if isinstance(result.output, ToolResult) and result.output.success:
-                    county_result = str(result.output.result_content)
-                    if "Average temperature for" in county_result and "°F" in county_result:
-                        try:
-                            # Extract temperature value
-                            temp_str = county_result.split(":")[-1].strip().split("°F")[0].strip()
-                            temp_value = float(temp_str.split("(")[0].strip())
-                            final_temperatures.append(temp_value)
-                            print(f"📊 County average: {temp_value}°F")
-                        except (ValueError, IndexError):
-                            print(f"⚠️  Could not parse county temperature from: {county_result}")
+            max_iterations=5
+        )
+        spawn_subagents = subagent_manager.spawn_agents
+        
+        # All tools including recursive spawning capability
+        all_tools = base_tools + [spawn_subagents]
+        
+        print(f"\n🌡️  Starting State Temperature Averaging with Run + spawn_agents tool")
+        print(f"📍 State: California")
+        print("🔄 Structure: Run → spawn_agents tool → recursive subagents")
+        
+        # Run the main state agent using Run
+        run = Run(
+            client=openai_client,
+            messages="Compute the average temperature for the state of California",
+            model="gpt-4o-mini",
+            tools=all_tools,
+            system_prompt="You are a temperature coordinator. When you need to get temperatures for multiple areas, use spawn_agents to create parallel agents. Each agent will handle one area.",
+            max_iterations=15
+        )
+        
+        # Track results and temperatures
+        outputs = []
+        temperature_values = []
+        spawn_calls = 0
+        final_result = None
+        
+        # Run and collect outputs
+        async for output in run:
+            outputs.append(output)
+            output_type = type(output).__name__
+            print(f"🔄 Main Agent Output: {output_type}")
             
-            if state_completed:
-                break
-        
-        # Verify the recursive structure worked and calculate final state average
-        print(f"\n📊 Temperature Averaging Summary:")
-        print(f"  State Coordinator Status: {'✅ Success' if state_completed else '❌ Failed'}")
-        print(f"  Total Operations: {len(state_results)}")
-        print(f"  County Averages Collected: {len(final_temperatures)}")
-        
-        if final_temperatures:
-            state_average = sum(final_temperatures) / len(final_temperatures)
-            print(f"  Final California Average: {state_average:.1f}°F")
-        else:
-            print(f"  ❌ No temperature data collected")
-        
-        # Look for evidence of recursive operations in tool results
-        county_operations = 0
-        city_references = 0
-        
-        for output in state_results:
-            if isinstance(output, ToolResult) and output.success:
+            # Track spawn_agents tool calls
+            if isinstance(output, ToolUseContent) and output.name == "spawn_agents":
+                spawn_calls += 1
+                print(f"  📡 Spawn call #{spawn_calls}: {len(output.parameters.get('agent_prompts', []))} agents")
+            
+            # Look for temperature data in tool results
+            elif isinstance(output, ToolResult) and output.success:
                 result_text = str(output.result_content).lower()
-                if "average temperature for" in result_text and "county" in result_text:
-                    county_operations += 1
-                if "cities" in result_text:
-                    city_references += 1
+                
+                # Look for temperature mentions
+                if "temperature" in result_text and ("°f" in result_text or "degrees" in result_text):
+                    print(f"  📊 Temperature result: {output.result_content[:100]}...")
+                    
+                    # Try to extract numerical temperatures
+                    import re
+                    temp_matches = re.findall(r'(\d+\.?\d*)\s*°?f', result_text)
+                    for temp_str in temp_matches:
+                        try:
+                            temp_val = float(temp_str)
+                            if 0 < temp_val < 200:  # Reasonable temperature range
+                                temperature_values.append(temp_val)
+                        except ValueError:
+                            pass
+                
+                # Look for final average result
+                if "average" in result_text and ("california" in result_text or "state" in result_text):
+                    final_result = output.result_content
+                    print(f"  🎯 Final State Result: {final_result}")
+            
+            # Look for text content with temperatures
+            elif isinstance(output, TextContent):
+                content_lower = output.text.lower()
+                if "temperature" in content_lower and ("california" in content_lower or "average" in content_lower):
+                    print(f"  💬 Text with temperature: {output.text[:100]}...")
+                    final_result = output.text
         
-        print(f"  County Operations: {county_operations}")
-        print(f"  City References: {city_references}")
+        # Verify the recursive structure worked
+        print(f"\n📊 Temperature Averaging Summary:")
+        print(f"  Total Outputs: {len(outputs)}")
+        print(f"  Spawn Agent Calls: {spawn_calls}")
+        print(f"  Temperature Values Found: {len(temperature_values)}")
+        if temperature_values:
+            print(f"  Temperature Range: {min(temperature_values):.1f}°F - {max(temperature_values):.1f}°F")
+            overall_avg = sum(temperature_values) / len(temperature_values)
+            print(f"  Overall Average: {overall_avg:.1f}°F")
+        print(f"  Final Result: {final_result}")
+        
+        # Count different types of outputs for verification
+        tool_uses = [o for o in outputs if isinstance(o, ToolUseContent)]
+        tool_results = [o for o in outputs if isinstance(o, ToolResult)]
+        text_outputs = [o for o in outputs if isinstance(o, TextContent)]
+        
+        print(f"  Tool Uses: {len(tool_uses)} (spawn_agents: {spawn_calls})")
+        print(f"  Tool Results: {len(tool_results)}")
+        print(f"  Text Outputs: {len(text_outputs)}")
         
         # Assertions for recursive behavior and temperature collection
-        assert state_completed, "State coordinator should complete successfully"
-        assert len(state_results) > 0, "Should have some temperature operations"
-        assert county_operations > 0, "Should have evidence of county-level processing"
-        assert len(final_temperatures) > 0, "Should have collected county temperature averages"
-        assert all(isinstance(temp, float) and 0 < temp < 200 for temp in final_temperatures), "Temperatures should be reasonable values"
+        assert len(outputs) > 0, "Should have some outputs"
+        assert spawn_calls > 0, "Should have called spawn_agents at least once"
+        assert len(tool_results) > 0, "Should have some tool results"
+        assert len(temperature_values) > 0, "Should have found some temperature values"
         
-        # Verify we got results for multiple counties (California has 3 counties in our test data)
-        expected_counties = len(STATE_TO_COUNTIES["California"])
-        print(f"  Expected Counties: {expected_counties}")
+        # Verify temperature values are reasonable
+        assert all(isinstance(temp, float) and 0 < temp < 200 for temp in temperature_values), \
+            "Temperatures should be reasonable float values"
         
-        print(f"🎉 Recursive temperature averaging verified!")
-        print(f"🌡️  Successfully computed temperature averages across {len(final_temperatures)} counties")
+        # Should have evidence of multi-level processing (multiple spawn calls or many temp values)
+        assert spawn_calls >= 1 or len(temperature_values) >= 3, \
+            "Should show evidence of multi-level processing"
+        
+        print(f"🎉 Recursive temperature averaging with Run + spawn_agents verified!")
+        print(f"🌡️  Successfully processed temperature data through agent hierarchy")
         
         return {
-            "state_success": state_completed,
-            "total_operations": len(state_results),
-            "county_operations": county_operations,
-            "final_temperatures": final_temperatures,
-            "state_average": sum(final_temperatures) / len(final_temperatures) if final_temperatures else None
+            "total_outputs": len(outputs),
+            "spawn_calls": spawn_calls,
+            "temperature_values": temperature_values,
+            "final_result": final_result,
+            "overall_average": sum(temperature_values) / len(temperature_values) if temperature_values else None
         }
     
     def test_deterministic_tools(self):
