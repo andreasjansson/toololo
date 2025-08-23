@@ -2,8 +2,8 @@
 
 import asyncio
 import logging
-from typing import Any, Callable, AsyncIterator, Optional
-from functools import partial
+from typing import Any, Callable, List, Tuple, AsyncIterator, Optional, Union
+
 from dataclasses import dataclass
 import openai
 
@@ -29,22 +29,20 @@ class ParallelSubagents:
     def __init__(
         self,
         client: openai.AsyncOpenAI,
-        model: str = "gpt-4o-mini",
-        tools: Optional[list[Callable[..., Any]]] = None,
+        model: str = "gpt-5-mini",
         max_tokens: int = 8192,
         reasoning_max_tokens: Optional[int] = None,
         max_iterations: int = 50
     ):
         self.client = client
         self.model = model
-        self.tools = tools or []
         self.max_tokens = max_tokens
         self.reasoning_max_tokens = reasoning_max_tokens
         self.max_iterations = max_iterations
-        self._agents: list[Run] = []
-        self._agent_ids: list[str] = []
+        self._agents: List[Run] = []
+        self._agent_ids: List[str] = []
     
-    def _bind_client_to_tools(self, tools: list[Callable[..., Any]]) -> list[Callable[..., Any]]:
+    def _bind_client_to_tools(self, tools: List[Callable[..., Any]]) -> List[Callable[..., Any]]:
         """Bind the OpenAI client to tools that need it using partial application."""
         bound_tools = []
         
@@ -70,38 +68,28 @@ class ParallelSubagents:
     
     async def spawn_agents(
         self,
-        agent_prompts: list[str],
-        system_prompt: str | list[str] = ""
+        agent_specs: List[Tuple[str, str, List[Callable[..., Any]]]]
     ) -> AsyncIterator[SubagentOutput]:
         """Spawn multiple subagents and yield their outputs as they come.
         
         Args:
-            agent_prompts: List of prompts for each agent
-            system_prompt: System prompt for all agents, or list of system prompts (one per agent)
+            agent_specs: List of (system_prompt, prompt, tools) tuples
             
         Yields:
             SubagentOutput containing outputs from each subagent as they execute
         """
-        logger.info(f"Spawning {len(agent_prompts)} parallel subagents")
-        
-        # Handle system prompts
-        if isinstance(system_prompt, str):
-            system_prompts = [system_prompt] * len(agent_prompts)
-        else:
-            system_prompts = system_prompt
-            if len(system_prompts) != len(agent_prompts):
-                raise ValueError(f"Number of system prompts ({len(system_prompts)}) must match number of agent prompts ({len(agent_prompts)})")
+        logger.info(f"Spawning {len(agent_specs)} parallel subagents")
         
         # Create agents
         self._agents = []
         self._agent_ids = []
         
-        # Bind client to tools that need it
-        bound_tools = self._bind_client_to_tools(self.tools)
-        
-        for i, (prompt, sys_prompt) in enumerate(zip(agent_prompts, system_prompts)):
-            agent_id = f"agent_{i}_{hash((sys_prompt, prompt))}"
+        for i, (system_prompt, prompt, tools) in enumerate(agent_specs):
+            agent_id = f"agent_{i}_{hash((system_prompt, prompt))}"
             self._agent_ids.append(agent_id)
+            
+            # Bind client to tools that need it
+            bound_tools = self._bind_client_to_tools(tools)
             
             # Create the agent
             agent = Run(
@@ -109,7 +97,7 @@ class ParallelSubagents:
                 messages=prompt,
                 model=self.model,
                 tools=bound_tools,
-                system_prompt=sys_prompt,
+                system_prompt=system_prompt,
                 max_tokens=self.max_tokens,
                 reasoning_max_tokens=self.reasoning_max_tokens,
                 max_iterations=self.max_iterations
@@ -197,7 +185,7 @@ class ParallelSubagents:
 
 async def spawn_parallel_agents(
     client: openai.AsyncOpenAI,
-    agent_specs: list[tuple[str, str, list[Callable[..., Any]]]],
+    agent_specs: List[Tuple[str, str, List[Callable[..., Any]]]],
     model: str = "gpt-4",
     max_tokens: int = 8192,
     reasoning_max_tokens: Optional[int] = None,
@@ -244,13 +232,5 @@ async def spawn_parallel_agents(
         max_iterations=max_iterations
     )
     
-    # Convert agent_specs to the new format
-    agent_prompts = [prompt for system_prompt, prompt, tools in agent_specs]
-    system_prompts = [system_prompt for system_prompt, prompt, tools in agent_specs]
-    
-    # Use the first spec's tools (assuming all have same tools for backwards compatibility)
-    if agent_specs:
-        manager.tools = agent_specs[0][2]
-    
-    async for output in manager.spawn_agents(agent_prompts, system_prompts):
+    async for output in manager.spawn_agents(agent_specs):
         yield output
