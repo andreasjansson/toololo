@@ -132,15 +132,52 @@ async def test_state_temperature_averaging(openai_client):
         latlng_temperature,
     ]
 
-    # Create ParallelSubagents manager and add its spawn method as a tool
+    # Create ParallelSubagents manager
     subagent_manager = ParallelSubagents(
         client=openai_client, 
         tools=tools,
         model="openai/gpt-5-mini",
         max_iterations=5
     )
-    spawn_subagents = subagent_manager.spawn_agents
-    tools.append(spawn_subagents)
+    
+    # Create a wrapper that consumes the async iterator and returns a simple result
+    async def spawn_agents_tool(
+        agent_prompts: list[str] | list[tuple[str, str]],
+        system_prompt: str | list[str] = ""
+    ) -> str:
+        """Tool wrapper for spawn_agents that consumes the async iterator and returns results."""
+        results = []
+        agent_statuses = {}
+        
+        try:
+            async for output in subagent_manager.spawn_agents(agent_prompts, system_prompt):
+                if output.is_final:
+                    agent_statuses[output.agent_index] = "completed" if not output.error else f"failed: {output.error}"
+                else:
+                    # Look for temperature-related outputs
+                    if isinstance(output.output, ToolResult) and output.output.success:
+                        result_str = str(output.output.content)
+                        if "temperature" in result_str.lower() and "°f" in result_str.lower():
+                            results.append(f"Agent {output.agent_index}: {result_str}")
+            
+            # Summarize results
+            completed_agents = sum(1 for status in agent_statuses.values() if status == "completed")
+            failed_agents = len(agent_statuses) - completed_agents
+            
+            summary = f"Spawned {len(agent_prompts)} agents. "
+            summary += f"Completed: {completed_agents}, Failed: {failed_agents}. "
+            
+            if results:
+                summary += f"Temperature results: {'; '.join(results)}"
+            else:
+                summary += "No temperature results collected."
+            
+            return summary
+            
+        except Exception as e:
+            return f"Error spawning agents: {str(e)}"
+    
+    tools.append(spawn_agents_tool)
 
     print(f"\n🌡️  Starting State Temperature Averaging with Run + spawn_agents tool")
     print(f"📍 State: California")
