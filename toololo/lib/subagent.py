@@ -114,9 +114,7 @@ class ParallelSubagents:
         logger.info(f"Spawning {len(agent_prompts)} parallel subagents")
         
         # Create agents
-        self._agents = []
-        self._agent_ids = []
-        
+        agents = []
         for i, item in enumerate(agent_prompts):
             # Handle different input formats
             if isinstance(item, tuple):
@@ -130,9 +128,6 @@ class ParallelSubagents:
                 else:
                     sys_prompt = system_prompt
             
-            agent_id = f"agent_{i}_{hash((sys_prompt, prompt))}"
-            self._agent_ids.append(agent_id)
-            
             # Create the agent with stored tools
             agent = Run(
                 client=self.client,
@@ -144,22 +139,16 @@ class ParallelSubagents:
                 reasoning_max_tokens=self.reasoning_max_tokens,
                 max_iterations=self.max_iterations
             )
-            self._agents.append(agent)
-            logger.info(f"Created subagent {i} ({agent_id}) with {len(self.tools)} tools")
+            agents.append(agent)
+            logger.info(f"Created subagent {i} with {len(self.tools)} tools")
         
         # Run all agents in parallel and collect final messages
         final_messages = []
-        async for output in self._run_agents_parallel():
-            if output.is_final:
-                if not output.error:
-                    logger.info(f"Agent {output.agent_index} completed successfully")
-                else:
-                    logger.error(f"Agent {output.agent_index} failed: {output.error}")
-            else:
-                # Collect final assistant messages (TextContent outputs)
-                if isinstance(output.output, TextContent):
-                    final_messages.append(output.output.content)
-                    logger.debug(f"Agent {output.agent_index} produced text: {output.output.content[:100]}...")
+        async for agent_index, output in iterate_outputs(agents):
+            # Collect final assistant messages (TextContent outputs)
+            if isinstance(output, TextContent):
+                final_messages.append(output.content)
+                logger.debug(f"Agent {agent_index} produced text: {output.content[:100]}...")
         
         logger.info(f"Collected {len(final_messages)} final messages from spawned agents")
         return final_messages
