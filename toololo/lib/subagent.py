@@ -128,6 +128,17 @@ class ParallelSubagents:
         Returns:
             List of final assistant message contents from each completed agent
         """
+        # Runtime validation to catch common mistake
+        if isinstance(agent_prompts, str):
+            raise TypeError(f"agent_prompts must be a list of strings, not a string. Got: {repr(agent_prompts)}")
+        
+        if not isinstance(agent_prompts, list):
+            raise TypeError(f"agent_prompts must be a list of strings, got {type(agent_prompts)}")
+        
+        for i, prompt in enumerate(agent_prompts):
+            if not isinstance(prompt, str):
+                raise TypeError(f"agent_prompts[{i}] must be a string, got {type(prompt)}: {repr(prompt)}")
+        
         logger.info(f"Spawning {len(agent_prompts)} parallel subagents")
         
         # Create agents
