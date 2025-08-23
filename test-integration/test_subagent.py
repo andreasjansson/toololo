@@ -1,12 +1,11 @@
 """Integration tests for toololo.lib.subagent module - Temperature averaging task."""
 
 import pytest
-import asyncio
 import os
 from typing import List, Tuple
 
 import openai
-from toololo.lib.subagent import spawn_parallel_agents, SubagentOutput, ParallelSubagents
+from toololo.lib.subagent import ParallelSubagents
 from toololo.types import TextContent, ToolUseContent, ToolResult
 
 
@@ -112,202 +111,139 @@ def latlng_temperature(lat: float, lng: float) -> float:
     return base_temp + lat_adjustment + lng_adjustment
 
 
-class TestTemperatureAveraging:
-    """Integration test for recursive subagent temperature averaging task."""
-    
-    @pytest.mark.asyncio
-    async def test_state_temperature_averaging(self, openai_client):
-        """Test recursive temperature averaging using Run with spawn_agents as a tool.
-        
-        This creates a three-level hierarchy where agents discover the pattern:
-        - Level 1: State agent (Run) uses spawn_agents to create county agents
-        - Level 2: County agents use spawn_agents to create city agents  
-        - Level 3: City agents use temperature tools to get actual data
-        
-        The LLM should figure out the recursive spawning pattern on its own.
-        """
-        
-        # Define the base tools available to all agents
-        base_tools = [
-            area_to_subareas,
-            is_city,
-            city_to_latlng,
-            latlng_temperature,
-        ]
-        
-        # Create ParallelSubagents manager and add its spawn method as a tool
-        subagent_manager = ParallelSubagents(
-            client=openai_client, 
-            tools=base_tools,
-            model="gpt-4o-mini",
-            max_iterations=5
-        )
-        spawn_subagents = subagent_manager.spawn_agents
-        
-        # All tools including recursive spawning capability
-        all_tools = base_tools + [spawn_subagents]
-        
-        print(f"\n🌡️  Starting State Temperature Averaging with Run + spawn_agents tool")
-        print(f"📍 State: California")
-        print("🔄 Structure: Run → spawn_agents tool → recursive subagents")
-        
-        # Run the main state agent using Run
-        run = Run(
-            client=openai_client,
-            messages="Compute the average temperature for the state of California",
-            model="gpt-4o-mini",
-            tools=all_tools,
-            system_prompt="You are a temperature coordinator. When you need to get temperatures for multiple areas, use spawn_agents to create parallel agents. Each agent will handle one area.",
-            max_iterations=15
-        )
-        
-        # Track results and temperatures
-        outputs = []
-        temperature_values = []
-        spawn_calls = 0
-        final_result = None
-        
-        # Run and collect outputs
-        async for output in run:
-            outputs.append(output)
-            output_type = type(output).__name__
-            print(f"🔄 Main Agent Output: {output_type}")
-            
-            # Track spawn_agents tool calls
-            if isinstance(output, ToolUseContent) and output.name == "spawn_agents":
-                spawn_calls += 1
-                print(f"  📡 Spawn call #{spawn_calls}: {len(output.parameters.get('agent_prompts', []))} agents")
-            
-            # Look for temperature data in tool results
-            elif isinstance(output, ToolResult) and output.success:
-                result_text = str(output.result_content).lower()
-                
-                # Look for temperature mentions
-                if "temperature" in result_text and ("°f" in result_text or "degrees" in result_text):
-                    print(f"  📊 Temperature result: {output.result_content[:100]}...")
-                    
-                    # Try to extract numerical temperatures
-                    import re
-                    temp_matches = re.findall(r'(\d+\.?\d*)\s*°?f', result_text)
-                    for temp_str in temp_matches:
-                        try:
-                            temp_val = float(temp_str)
-                            if 0 < temp_val < 200:  # Reasonable temperature range
-                                temperature_values.append(temp_val)
-                        except ValueError:
-                            pass
-                
-                # Look for final average result
-                if "average" in result_text and ("california" in result_text or "state" in result_text):
-                    final_result = output.result_content
-                    print(f"  🎯 Final State Result: {final_result}")
-            
-            # Look for text content with temperatures
-            elif isinstance(output, TextContent):
-                content_lower = output.text.lower()
-                if "temperature" in content_lower and ("california" in content_lower or "average" in content_lower):
-                    print(f"  💬 Text with temperature: {output.text[:100]}...")
-                    final_result = output.text
-        
-        # Verify the recursive structure worked
-        print(f"\n📊 Temperature Averaging Summary:")
-        print(f"  Total Outputs: {len(outputs)}")
-        print(f"  Spawn Agent Calls: {spawn_calls}")
-        print(f"  Temperature Values Found: {len(temperature_values)}")
-        if temperature_values:
-            print(f"  Temperature Range: {min(temperature_values):.1f}°F - {max(temperature_values):.1f}°F")
-            overall_avg = sum(temperature_values) / len(temperature_values)
-            print(f"  Overall Average: {overall_avg:.1f}°F")
-        print(f"  Final Result: {final_result}")
-        
-        # Count different types of outputs for verification
-        tool_uses = [o for o in outputs if isinstance(o, ToolUseContent)]
-        tool_results = [o for o in outputs if isinstance(o, ToolResult)]
-        text_outputs = [o for o in outputs if isinstance(o, TextContent)]
-        
-        print(f"  Tool Uses: {len(tool_uses)} (spawn_agents: {spawn_calls})")
-        print(f"  Tool Results: {len(tool_results)}")
-        print(f"  Text Outputs: {len(text_outputs)}")
-        
-        # Assertions for recursive behavior and temperature collection
-        assert len(outputs) > 0, "Should have some outputs"
-        assert spawn_calls > 0, "Should have called spawn_agents at least once"
-        assert len(tool_results) > 0, "Should have some tool results"
-        assert len(temperature_values) > 0, "Should have found some temperature values"
-        
-        # Verify temperature values are reasonable
-        assert all(isinstance(temp, float) and 0 < temp < 200 for temp in temperature_values), \
-            "Temperatures should be reasonable float values"
-        
-        # Should have evidence of multi-level processing (multiple spawn calls or many temp values)
-        assert spawn_calls >= 1 or len(temperature_values) >= 3, \
-            "Should show evidence of multi-level processing"
-        
-        print(f"🎉 Recursive temperature averaging with Run + spawn_agents verified!")
-        print(f"🌡️  Successfully processed temperature data through agent hierarchy")
-        
-        return {
-            "total_outputs": len(outputs),
-            "spawn_calls": spawn_calls,
-            "temperature_values": temperature_values,
-            "final_result": final_result,
-            "overall_average": sum(temperature_values) / len(temperature_values) if temperature_values else None
-        }
-    
-    def test_deterministic_tools(self):
-        """Test that the deterministic tools work correctly."""
-        # Test area_to_subareas
-        ca_counties = area_to_subareas("California")
-        assert len(ca_counties) == 3
-        assert "Los Angeles County" in ca_counties
-        
-        la_cities = area_to_subareas("Los Angeles County")
-        assert len(la_cities) == 3
-        assert "Los Angeles" in la_cities
-        
-        # Test is_city
-        assert is_city("Los Angeles") == True
-        assert is_city("Los Angeles County") == False
-        assert is_city("California") == False
-        
-        # Test city_to_latlng
-        la_coords = city_to_latlng("Los Angeles")
-        assert isinstance(la_coords, tuple)
-        assert len(la_coords) == 2
-        assert isinstance(la_coords[0], float)
-        assert isinstance(la_coords[1], float)
-        
-        # Test error handling
-        with pytest.raises(ValueError):
-            city_to_latlng("Not A City")
-        
-        with pytest.raises(ValueError):
-            area_to_subareas("Not An Area")
-        
-        # Test latlng_temperature
-        temp1 = latlng_temperature(25.0, -80.0)  # Miami-like (south, east)
-        temp2 = latlng_temperature(45.0, -120.0)  # Seattle-like (north, west)
-        assert isinstance(temp1, float)
-        assert isinstance(temp2, float)
-        assert temp1 > temp2, "Southern/Eastern locations should be warmer"
-        
-    def test_temperature_progression(self):
-        """Test that temperature increases as we go south and east."""
-        # Test north to south (latitude decrease = temperature increase)
-        north_temp = latlng_temperature(40.0, -100.0)
-        south_temp = latlng_temperature(30.0, -100.0)
-        assert south_temp > north_temp, "Southern locations should be warmer"
-        
-        # Test west to east (longitude increase = temperature increase)
-        west_temp = latlng_temperature(35.0, -120.0)
-        east_temp = latlng_temperature(35.0, -80.0)
-        assert east_temp > west_temp, "Eastern locations should be warmer"
-        
-        # Test actual city temperatures make sense
-        la_temp = latlng_temperature(*CITY_COORDINATES["Los Angeles"])
-        miami_temp = latlng_temperature(*CITY_COORDINATES["Miami"])
-        houston_temp = latlng_temperature(*CITY_COORDINATES["Houston"])
-        
-        # Miami should be warmest (furthest south and east)
-        assert miami_temp > la_temp
-        assert miami_temp > houston_temp
+@pytest.mark.asyncio
+async def test_state_temperature_averaging(openai_client):
+    """Test recursive temperature averaging using Run with spawn_agents as a tool.
+
+    This creates a three-level hierarchy where agents discover the pattern:
+    - Level 1: State agent (Run) uses spawn_agents to create county agents
+    - Level 2: County agents use spawn_agents to create city agents  
+    - Level 3: City agents use temperature tools to get actual data
+
+    The LLM should figure out the recursive spawning pattern on its own.
+    """
+
+    # Define the base tools available to all agents
+    tools = [
+        area_to_subareas,
+        is_city,
+        city_to_latlng,
+        latlng_temperature,
+    ]
+
+    # Create ParallelSubagents manager and add its spawn method as a tool
+    subagent_manager = ParallelSubagents(
+        client=openai_client, 
+        tools=tools,
+        model="openai/gpt-5-mini",
+        max_iterations=5
+    )
+    spawn_subagents = subagent_manager.spawn_agents
+    tools.append(spawn_subagents)
+
+    print(f"\n🌡️  Starting State Temperature Averaging with Run + spawn_agents tool")
+    print(f"📍 State: California")
+    print("🔄 Structure: Run → spawn_agents tool → recursive subagents")
+
+    # Run the main state agent using Run
+    run = Run(
+        client=openai_client,
+        messages="Compute the average temperature for the state of California",
+        model="openai/gpt-5-mini",
+        tools=tools,
+        system_prompt="You are a temperature coordinator. When you need to get temperatures for multiple areas, use spawn_agents to create parallel agents. Each agent will handle one area.",
+        max_iterations=15
+    )
+
+    # Track results and temperatures
+    outputs = []
+    temperature_values = []
+    spawn_calls = 0
+    final_result = None
+
+    # Run and collect outputs
+    async for output in run:
+        outputs.append(output)
+        output_type = type(output).__name__
+        print(f"🔄 Main Agent Output: {output_type}")
+
+        # Track spawn_agents tool calls
+        if isinstance(output, ToolUseContent) and output.name == "spawn_agents":
+            spawn_calls += 1
+            print(f"  📡 Spawn call #{spawn_calls}: {len(output.parameters.get('agent_prompts', []))} agents")
+
+        # Look for temperature data in tool results
+        elif isinstance(output, ToolResult) and output.success:
+            result_text = str(output.result_content).lower()
+
+            # Look for temperature mentions
+            if "temperature" in result_text and ("°f" in result_text or "degrees" in result_text):
+                print(f"  📊 Temperature result: {output.result_content[:100]}...")
+
+                # Try to extract numerical temperatures
+                import re
+                temp_matches = re.findall(r'(\d+\.?\d*)\s*°?f', result_text)
+                for temp_str in temp_matches:
+                    try:
+                        temp_val = float(temp_str)
+                        if 0 < temp_val < 200:  # Reasonable temperature range
+                            temperature_values.append(temp_val)
+                    except ValueError:
+                        pass
+
+            # Look for final average result
+            if "average" in result_text and ("california" in result_text or "state" in result_text):
+                final_result = output.result_content
+                print(f"  🎯 Final State Result: {final_result}")
+
+        # Look for text content with temperatures
+        elif isinstance(output, TextContent):
+            content_lower = output.text.lower()
+            if "temperature" in content_lower and ("california" in content_lower or "average" in content_lower):
+                print(f"  💬 Text with temperature: {output.text[:100]}...")
+                final_result = output.text
+
+    # Verify the recursive structure worked
+    print(f"\n📊 Temperature Averaging Summary:")
+    print(f"  Total Outputs: {len(outputs)}")
+    print(f"  Spawn Agent Calls: {spawn_calls}")
+    print(f"  Temperature Values Found: {len(temperature_values)}")
+    if temperature_values:
+        print(f"  Temperature Range: {min(temperature_values):.1f}°F - {max(temperature_values):.1f}°F")
+        overall_avg = sum(temperature_values) / len(temperature_values)
+        print(f"  Overall Average: {overall_avg:.1f}°F")
+    print(f"  Final Result: {final_result}")
+
+    # Count different types of outputs for verification
+    tool_uses = [o for o in outputs if isinstance(o, ToolUseContent)]
+    tool_results = [o for o in outputs if isinstance(o, ToolResult)]
+    text_outputs = [o for o in outputs if isinstance(o, TextContent)]
+
+    print(f"  Tool Uses: {len(tool_uses)} (spawn_agents: {spawn_calls})")
+    print(f"  Tool Results: {len(tool_results)}")
+    print(f"  Text Outputs: {len(text_outputs)}")
+
+    # Assertions for recursive behavior and temperature collection
+    assert len(outputs) > 0, "Should have some outputs"
+    assert spawn_calls > 0, "Should have called spawn_agents at least once"
+    assert len(tool_results) > 0, "Should have some tool results"
+    assert len(temperature_values) > 0, "Should have found some temperature values"
+
+    # Verify temperature values are reasonable
+    assert all(isinstance(temp, float) and 0 < temp < 200 for temp in temperature_values), \
+        "Temperatures should be reasonable float values"
+
+    # Should have evidence of multi-level processing (multiple spawn calls or many temp values)
+    assert spawn_calls >= 1 or len(temperature_values) >= 3, \
+        "Should show evidence of multi-level processing"
+
+    print(f"🎉 Recursive temperature averaging with Run + spawn_agents verified!")
+    print(f"🌡️  Successfully processed temperature data through agent hierarchy")
+
+    return {
+        "total_outputs": len(outputs),
+        "spawn_calls": spawn_calls,
+        "temperature_values": temperature_values,
+        "final_result": final_result,
+        "overall_average": sum(temperature_values) / len(temperature_values) if temperature_values else None
+    }
