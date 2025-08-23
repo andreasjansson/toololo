@@ -1,17 +1,12 @@
-"""Integration tests for toololo.lib.subagent module."""
+"""Integration tests for toololo.lib.subagent module - Temperature averaging task."""
 
 import pytest
 import asyncio
-import tempfile
-import json
 import os
-from pathlib import Path
+from typing import List, Tuple
 
 import openai
 from toololo.lib.subagent import spawn_parallel_agents, SubagentOutput, ParallelSubagents
-from toololo.lib.files import write_file, read_file, list_directory
-from toololo.lib.shell import shell_command
-from toololo.run import Run
 from toololo.types import TextContent, ToolUseContent, ToolResult
 
 
@@ -24,1029 +19,349 @@ def openai_client():
     return openai.AsyncOpenAI(api_key=api_key)
 
 
-# Simple tools for testing (defined inline to keep things simple)
+# Deterministic tools for temperature averaging task
 
-def count_python_files(directory: str) -> str:
-    """Count Python files in a directory."""
-    result = shell_command(f"find {directory} -name '*.py' -type f | wc -l")
-    if result.success:
-        count = int(result.stdout.strip())
-        return f"Found {count} Python files in {directory}"
-    return f"Error counting files: {result.stderr}"
+STATE_TO_COUNTIES = {
+    "California": ["Los Angeles County", "San Francisco County", "San Diego County"],
+    "Texas": ["Harris County", "Dallas County", "Travis County"],
+    "Florida": ["Miami-Dade County", "Orange County", "Hillsborough County"],
+    "New York": ["New York County", "Kings County", "Queens County"],
+}
+
+COUNTY_TO_CITIES = {
+    "Los Angeles County": ["Los Angeles", "Long Beach", "Pasadena"],
+    "San Francisco County": ["San Francisco"],
+    "San Diego County": ["San Diego", "Chula Vista", "Oceanside"],
+    "Harris County": ["Houston", "Pasadena", "Baytown"],
+    "Dallas County": ["Dallas", "Irving", "Garland"],
+    "Travis County": ["Austin", "Round Rock", "Cedar Park"],
+    "Miami-Dade County": ["Miami", "Hialeah", "Miami Beach"],
+    "Orange County": ["Orlando", "Winter Park", "Oviedo"],
+    "Hillsborough County": ["Tampa", "Plant City", "Temple Terrace"],
+    "New York County": ["Manhattan"],
+    "Kings County": ["Brooklyn"],
+    "Queens County": ["Queens"],
+}
+
+CITY_COORDINATES = {
+    "Los Angeles": (34.0522, -118.2437),
+    "Long Beach": (33.7701, -118.1937),
+    "Pasadena": (34.1478, -118.1445),
+    "San Francisco": (37.7749, -122.4194),
+    "San Diego": (32.7157, -117.1611),
+    "Chula Vista": (32.6401, -117.0842),
+    "Oceanside": (33.1959, -117.3795),
+    "Houston": (29.7604, -95.3698),
+    "Baytown": (29.7355, -94.9777),
+    "Dallas": (32.7767, -96.7970),
+    "Irving": (32.8140, -96.9489),
+    "Garland": (32.9126, -96.6389),
+    "Austin": (30.2672, -97.7431),
+    "Round Rock": (30.5083, -97.6789),
+    "Cedar Park": (30.5052, -97.8203),
+    "Miami": (25.7617, -80.1918),
+    "Hialeah": (25.8576, -80.2781),
+    "Miami Beach": (25.7907, -80.1300),
+    "Orlando": (28.5383, -81.3792),
+    "Winter Park": (28.6000, -81.3395),
+    "Oviedo": (28.6698, -81.2084),
+    "Tampa": (27.9506, -82.4572),
+    "Plant City": (28.0186, -82.1120),
+    "Temple Terrace": (28.0356, -82.3890),
+    "Manhattan": (40.7831, -73.9712),
+    "Brooklyn": (40.6782, -73.9442),
+    "Queens": (40.7282, -73.7949),
+}
 
 
-def analyze_file_sizes(directory: str) -> str:
-    """Analyze file sizes in a directory."""
-    result = shell_command(f"find {directory} -type f -exec ls -l {{}} + | awk '{{total += $5}} END {{print total}}'")
-    if result.success:
-        total_bytes = int(result.stdout.strip()) if result.stdout.strip() else 0
-        return f"Total size: {total_bytes} bytes ({total_bytes / 1024:.1f} KB)"
-    return f"Error analyzing sizes: {result.stderr}"
-
-
-def check_git_status(directory: str) -> str:
-    """Check if directory is a git repo and get status."""
-    git_check = shell_command("git rev-parse --is-inside-work-tree", working_directory=directory)
-    if not git_check.success:
-        return f"Not a git repository: {directory}"
-    
-    status_result = shell_command("git status --porcelain", working_directory=directory)
-    if status_result.success:
-        lines = [line for line in status_result.stdout.split('\n') if line.strip()]
-        if lines:
-            return f"Git repo with {len(lines)} uncommitted changes"
-        return "Git repo with clean working directory"
-    return f"Git repo (status check failed): {status_result.stderr}"
-
-
-def find_readme_files(directory: str) -> str:
-    """Find and analyze README files."""
-    result = shell_command(f"find {directory} -iname 'readme*' -type f")
-    if result.success:
-        files = [f.strip() for f in result.stdout.split('\n') if f.strip()]
-        if files:
-            return f"Found {len(files)} README files: {', '.join([Path(f).name for f in files])}"
-        return "No README files found"
-    return f"Error searching for README: {result.stderr}"
-
-
-def assess_code_complexity(directory: str) -> str:
-    """Simple assessment of code complexity based on line counts and file counts."""
-    py_files = shell_command(f"find {directory} -name '*.py' -type f | wc -l")
-    if not py_files.success:
-        return "No Python files found or error occurred"
-    
-    file_count = int(py_files.stdout.strip())
-    if file_count == 0:
-        return "No Python files to analyze"
-    
-    # Count total lines in Python files
-    lines_result = shell_command(f"find {directory} -name '*.py' -type f -exec wc -l {{}} + | tail -n 1")
-    total_lines = 0
-    if lines_result.success and lines_result.stdout.strip():
-        try:
-            total_lines = int(lines_result.stdout.strip().split()[0])
-        except (ValueError, IndexError):
-            pass
-    
-    avg_lines = total_lines / file_count if file_count > 0 else 0
-    
-    if avg_lines > 200:
-        complexity = "High"
-    elif avg_lines > 100:
-        complexity = "Medium"
+def area_to_subareas(area: str) -> List[str]:
+    """Return a list of subareas for an area. For a state, return counties, for counties, return cities."""
+    if area in STATE_TO_COUNTIES:
+        return STATE_TO_COUNTIES[area]
+    elif area in COUNTY_TO_CITIES:
+        return COUNTY_TO_CITIES[area]
     else:
-        complexity = "Low"
-    
-    return f"Code complexity: {complexity} ({file_count} files, {total_lines} total lines, {avg_lines:.1f} avg)"
+        raise ValueError(f"Unknown area: {area}")
 
 
-async def ai_summary_tool(content: str, focus: str, client=None) -> str:
-    """AI tool that generates summaries using OpenAI."""
-    if not client:
-        return f"No AI client available. Focus: {focus}, Content preview: {content[:50]}..." 
-    
-    try:
-        response = await client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{
-                "role": "user", 
-                "content": f"Provide a brief analysis of this {focus} (max 2 sentences): {content}"
-            }],
-            max_tokens=100
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        return f"AI analysis failed: {str(e)}"
+def is_city(area_or_city: str) -> bool:
+    """Return true if it's a city."""
+    return area_or_city in CITY_COORDINATES
 
 
-class TestSimpleTools:
-    """Test the simple inline tools."""
-    
-    def test_count_python_files(self):
-        """Test Python file counting."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Create Python files
-            write_file(str(Path(tmpdir) / "main.py"), "print('hello')")
-            write_file(str(Path(tmpdir) / "utils.py"), "def helper(): pass")
-            write_file(str(Path(tmpdir) / "readme.md"), "# Project")
-            
-            result = count_python_files(tmpdir)
-            assert "Found 2 Python files" in result
-    
-    def test_analyze_file_sizes(self):
-        """Test file size analysis."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            write_file(str(Path(tmpdir) / "small.txt"), "hello")
-            write_file(str(Path(tmpdir) / "large.txt"), "x" * 1000)
-            
-            result = analyze_file_sizes(tmpdir)
-            assert "Total size:" in result
-            assert "bytes" in result
-    
-    def test_find_readme_files(self):
-        """Test README file detection."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            write_file(str(Path(tmpdir) / "README.md"), "# Project")
-            write_file(str(Path(tmpdir) / "readme.txt"), "Info")
-            
-            result = find_readme_files(tmpdir)
-            assert "Found 2 README files" in result
-    
-    def test_assess_code_complexity(self):
-        """Test code complexity assessment."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Create a simple Python file
-            simple_code = "def hello():\n    print('world')\n"
-            write_file(str(Path(tmpdir) / "simple.py"), simple_code)
-            
-            result = assess_code_complexity(tmpdir)
-            assert "Code complexity: Low" in result
-            assert "1 files" in result
+def city_to_latlng(city: str) -> Tuple[float, float]:
+    """Return a lat/lng for a city. Throw an error if it's not a city."""
+    if city not in CITY_COORDINATES:
+        raise ValueError(f"Unknown city: {city}")
+    return CITY_COORDINATES[city]
 
 
-class TestSubagentCore:
-    """Test core subagent functionality."""
+def latlng_temperature(lat: float, lng: float) -> float:
+    """Deterministically return temperature for a lat/lng. The further south/east, the warmer."""
+    # Base temperature starts at 50°F
+    base_temp = 50.0
     
-    def test_parallel_subagents_init(self, openai_client):
-        """Test ParallelSubagents initialization."""
-        manager = ParallelSubagents(
-            client=openai_client,
-            model="gpt-4o-mini",
-            max_tokens=1000
-        )
-        
-        assert manager.client == openai_client
-        assert manager.model == "gpt-4o-mini"
-        assert manager.max_tokens == 1000
-        assert manager._agents == []
+    # Add temperature based on southern latitude (closer to equator = warmer)
+    # Latitude ranges roughly from 25-45 in our data
+    lat_adjustment = (45 - lat) * 1.5  # Warmer as lat gets smaller (further south)
     
-    def test_bind_client_to_tools(self, openai_client):
-        """Test client binding to tools."""
-        manager = ParallelSubagents(client=openai_client)
-        
-        # Define a tool that needs a client
-        def tool_with_client(text: str, client=None):
-            return f"Processed {text} with client {type(client).__name__}"
-        
-        # Define a tool that doesn't need a client
-        def simple_tool(text: str):
-            return f"Simple: {text}"
-        
-        tools = [tool_with_client, simple_tool]
-        bound_tools = manager._bind_client_to_tools(tools)
-        
-        assert len(bound_tools) == 2
-        
-        # Test the bound tool
-        result = bound_tools[0]("test")
-        assert "AsyncOpenAI" in result
-        
-        # Test the simple tool (unchanged)
-        result = bound_tools[1]("test")
-        assert result == "Simple: test"
+    # Add temperature based on eastern longitude (arbitrary for this test)
+    # Longitude ranges roughly from -122 to -73 in our data
+    lng_adjustment = (lng + 122) * 0.3  # Warmer as lng gets larger (further east)
+    
+    return base_temp + lat_adjustment + lng_adjustment
 
 
-class TestRecursiveCodeReview:
-    """Integration test for recursive subagent code review scenario.
-    
-    This demonstrates a tree structure of agents:
-    - Level 1: Main Coordinator
-    - Level 2: File Review Agents (one per Python file)
-    - Level 3: Function Analysis Agents (spawned by file agents for each function)
-    
-    This shows how subagents can recursively spawn other subagents to handle
-    tasks that naturally decompose into hierarchical subtasks.
-    """
+class TestTemperatureAveraging:
+    """Integration test for recursive subagent temperature averaging task."""
     
     @pytest.mark.asyncio
-    async def test_recursive_code_review_pipeline(self, openai_client):
-        """Test recursive subagents: Coordinator -> File Agents -> Function Agents.
+    async def test_state_temperature_averaging(self, openai_client):
+        """Test recursive temperature averaging: State -> Counties -> Cities -> Temperatures.
         
-        This demonstrates a realistic tree-structured workflow where agents
-        spawn child agents to handle subtasks, creating a natural hierarchy.
+        This creates a three-level hierarchy:
+        - Level 1: State agent coordinates county agents
+        - Level 2: County agents coordinate city agents  
+        - Level 3: City agents get temperatures and return them
+        
+        The results should bubble back up to compute averages.
         """
         
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Create a simple multi-file Python project
-            project_dir = Path(tmpdir) / "simple_project"
-            await self._create_simple_code_project(project_dir)
-            
-            # Step 1: Define the recursive file review tool
-            async def review_file_with_function_agents(file_path: str, client: openai.AsyncOpenAI = None) -> str:
-                """Level 2 Agent Tool: Reviews a file by spawning function analysis agents."""
-                if not client:
-                    return f"No client available for {file_path}"
+        # Level 3 tool: Get temperature for a city (used by city agents)
+        async def get_city_temperature(city_name: str, client: openai.AsyncOpenAI = None) -> str:
+            """Level 3 Agent Tool: Get temperature for a specific city."""
+            try:
+                if not is_city(city_name):
+                    return f"Error: {city_name} is not a city"
                 
-                try:
-                    # Read the file and extract functions
-                    content = read_file(file_path)
-                    functions = self._extract_function_names(content)
-                    
-                    if not functions:
-                        return f"No functions found in {file_path}"
-                    
-                    print(f"    📄 File agent analyzing {len(functions)} functions in {Path(file_path).name}")
-                    
-                    # Step 2: Spawn function analysis agents (Level 3)
-                    function_agent_specs = []
-                    for func_name in functions[:2]:  # Limit to 2 functions for demo
-                        function_agent_specs.append((
-                            f"You are a Function Analyst. Analyze the {func_name} function for code quality.",
-                            f"Analyze the function '{func_name}' in this code:\n\n{content}\n\nProvide a brief quality assessment.",
-                            [ai_summary_tool]
-                        ))
-                    
-                    # Collect function analysis results
-                    function_results = []
-                    completed_functions = set()
-                    
-                    async for result in spawn_parallel_agents(
-                        client=client,
-                        agent_specs=function_agent_specs,
-                        model="gpt-4o-mini",
-                        max_iterations=2
-                    ):
-                        if result.is_final:
-                            completed_functions.add(result.agent_index)
-                            if result.error:
-                                function_results.append(f"Function analysis {result.agent_index} failed: {result.error}")
-                            else:
-                                function_results.append(f"Function {functions[result.agent_index] if result.agent_index < len(functions) else result.agent_index} analyzed")
-                        
-                        # Break when all function agents complete
-                        if len(completed_functions) == len(function_agent_specs):
-                            break
-                    
-                    return f"File {Path(file_path).name}: {len(function_results)} functions analyzed - {'; '.join(function_results)}"
+                lat, lng = city_to_latlng(city_name)
+                temp = latlng_temperature(lat, lng)
+                return f"Temperature for {city_name}: {temp:.1f}°F"
                 
-                except Exception as e:
-                    return f"Error analyzing file {file_path}: {str(e)}"
-            
-            # Step 3: Level 1 - Main Coordinator Agent
-            coordinator_spec = [(
-                "You are the Main Code Review Coordinator. You manage file review agents that in turn "
-                "manage function analysis agents. Coordinate the recursive review process.",
-                f"Coordinate a recursive code review of {project_dir}. "
-                f"Use your file review tool to analyze each Python file in the project.",
-                [review_file_with_function_agents, list_directory, count_python_files]
-            )]
-            
-            print(f"\n🌳 Starting Recursive Code Review")
-            print(f"📁 Project: {project_dir.name}")
-            print("🔄 Structure: Coordinator → File Agents → Function Agents")
-            
-            # Track the recursive review process
-            review_results = []
-            coordinator_completed = False
-            
-            # Run the main coordinator agent
-            async for result in spawn_parallel_agents(
-                client=openai_client,
-                agent_specs=coordinator_spec,
-                model="gpt-4o-mini",
-                max_iterations=4
-            ):
-                if result.is_final:
-                    coordinator_completed = True
-                    if result.error:
-                        print(f"❌ Coordinator failed: {result.error}")
-                    else:
-                        print(f"✅ Recursive code review completed")
-                else:
-                    review_results.append(result.output)
-                    output_type = type(result.output).__name__
-                    print(f"🔄 Coordinator: {output_type}")
-                
-                if coordinator_completed:
-                    break
-            
-            # Verify the recursive structure worked
-            print(f"\n📊 Recursive Review Summary:")
-            print(f"  Coordinator Status: {'✅ Success' if coordinator_completed else '❌ Failed'}")
-            print(f"  Total Operations: {len(review_results)}")
-            
-            # Look for evidence of recursive operations in tool results
-            file_analysis_count = 0
-            function_analysis_count = 0
-            
-            for output in review_results:
-                if isinstance(output, ToolResult) and output.success:
-                    result_text = str(output.result_content).lower()
-                    if "functions analyzed" in result_text:
-                        file_analysis_count += 1
-                    if "function" in result_text and "analyzed" in result_text:
-                        function_analysis_count += 1
-            
-            print(f"  File Analyses: {file_analysis_count}")
-            print(f"  Function References: {function_analysis_count}")
-            
-            # Assertions for recursive behavior
-            assert coordinator_completed, "Coordinator agent should complete successfully"
-            assert len(review_results) > 0, "Should have some review operations"
-            assert file_analysis_count > 0, "Should have evidence of file-level analysis"
-            
-            print(f"🎉 Recursive subagent tree structure verified!")
-            return {
-                "coordinator_success": coordinator_completed,
-                "total_operations": len(review_results),
-                "file_analyses": file_analysis_count,
-                "function_references": function_analysis_count
-            }
-    
-    def _extract_function_names(self, code_content: str) -> list:
-        """Extract function names from Python code."""
-        import re
-        # Simple regex to find function definitions
-        function_pattern = r'^\s*def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\('
-        functions = re.findall(function_pattern, code_content, re.MULTILINE)
-        return functions
-    
-    async def _create_simple_code_project(self, project_dir: Path):
-        """Create a simple Python project with multiple files and functions for recursive review."""
-        project_dir.mkdir(parents=True, exist_ok=True)
+            except Exception as e:
+                return f"Error getting temperature for {city_name}: {str(e)}"
         
-        # Create simple Python files with multiple functions each
-        project_files = {
-            "calculator.py": """def add(a, b):
-    \"\"\"Add two numbers.\"\"\"
-    return a + b
-
-def subtract(a, b):
-    \"\"\"Subtract two numbers.\"\"\"
-    return a - b
-
-def multiply(a, b):
-    \"\"\"Multiply two numbers.\"\"\"
-    return a * b
-""",
-            
-            "string_utils.py": """def reverse_string(text):
-    \"\"\"Reverse a string.\"\"\"
-    return text[::-1]
-
-def count_vowels(text):
-    \"\"\"Count vowels in text.\"\"\"
-    vowels = 'aeiouAEIOU'
-    return sum(1 for char in text if char in vowels)
-""",
-            
-            "data_processor.py": """def filter_even(numbers):
-    \"\"\"Filter even numbers from a list.\"\"\"
-    return [n for n in numbers if n % 2 == 0]
-
-def sum_list(numbers):
-    \"\"\"Sum all numbers in a list.\"\"\"
-    return sum(numbers)
-"""
-        }
-        
-        # Write all project files
-        for file_path, content in project_files.items():
-            full_path = project_dir / file_path
-            write_file(str(full_path), content)
-        
-        print(f"✅ Created simple project with {len(project_files)} files for recursive review")
-        
-        # Create directory structure
-        (project_dir / "src").mkdir()
-        (project_dir / "tests").mkdir() 
-        (project_dir / "docs").mkdir()
-        (project_dir / "config").mkdir()
-        (project_dir / ".github").mkdir()
-        
-        # Create realistic project files
-        project_files = {
-            "README.md": """# Awesome Project 🚀
-
-A fantastic open-source project that demonstrates best practices.
-
-## Features
-- Clean architecture
-- Comprehensive testing
-- Great documentation
-- Active community
-
-## Installation
-```bash
-pip install -r requirements.txt
-```
-
-## Usage
-```python
-from awesome_project import main
-main.run()
-```
-
-## Contributing
-We welcome contributions! Please see CONTRIBUTING.md for guidelines.
-
-## License
-MIT License - see LICENSE file for details.
-""",
-            
-            "src/main.py": """#!/usr/bin/env python3
-\"\"\"Main module for Awesome Project.\"\"\"
-
-import argparse
-import logging
-from pathlib import Path
-
-from .core import DataProcessor
-from .utils import setup_logging, load_config
-
-logger = logging.getLogger(__name__)
-
-def main():
-    \"\"\"Main entry point for the application.\"\"\"
-    parser = argparse.ArgumentParser(description="Awesome Project")
-    parser.add_argument("--config", help="Configuration file", default="config/default.json")
-    parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
-    parser.add_argument("input_file", help="Input file to process")
-    
-    args = parser.parse_args()
-    
-    # Setup logging
-    setup_logging(logging.DEBUG if args.verbose else logging.INFO)
-    logger.info("Starting Awesome Project")
-    
-    try:
-        # Load configuration
-        config = load_config(args.config)
-        
-        # Initialize processor
-        processor = DataProcessor(config)
-        
-        # Process input
-        result = processor.process_file(args.input_file)
-        
-        print(f"Processing completed successfully: {result}")
-        return 0
-        
-    except Exception as e:
-        logger.error(f"Processing failed: {e}")
-        return 1
-
-if __name__ == "__main__":
-    exit(main())
-""",
-            
-            "src/core.py": """\"\"\"Core data processing functionality.\"\"\"
-
-import json
-import logging
-from pathlib import Path
-from typing import Dict, List, Any, Optional
-
-logger = logging.getLogger(__name__)
-
-class DataProcessor:
-    \"\"\"Main data processing engine.\"\"\"
-    
-    def __init__(self, config: Dict[str, Any]):
-        self.config = config
-        self.processed_count = 0
-        self.errors = []
-        
-    def process_file(self, file_path: str) -> Dict[str, Any]:
-        \"\"\"Process a single file and return results.\"\"\"
-        path = Path(file_path)
-        
-        if not path.exists():
-            raise FileNotFoundError(f"File not found: {file_path}")
-            
-        logger.info(f"Processing file: {path.name}")
-        
-        try:
-            if path.suffix == '.json':
-                return self._process_json_file(path)
-            elif path.suffix in ['.txt', '.md']:
-                return self._process_text_file(path)
-            else:
-                logger.warning(f"Unsupported file type: {path.suffix}")
-                return {"status": "skipped", "reason": "unsupported_type"}
-                
-        except Exception as e:
-            logger.error(f"Error processing {path.name}: {e}")
-            self.errors.append(str(e))
-            raise
-    
-    def _process_json_file(self, path: Path) -> Dict[str, Any]:
-        \"\"\"Process JSON files.\"\"\"
-        with open(path, 'r') as f:
-            data = json.load(f)
-            
-        result = {
-            "type": "json",
-            "file_name": path.name,
-            "records": len(data) if isinstance(data, list) else 1,
-            "size_bytes": path.stat().st_size,
-            "status": "success"
-        }
-        
-        self.processed_count += 1
-        return result
-    
-    def _process_text_file(self, path: Path) -> Dict[str, Any]:
-        \"\"\"Process text files.\"\"\"
-        with open(path, 'r') as f:
-            content = f.read()
-            
-        result = {
-            "type": "text",
-            "file_name": path.name,
-            "lines": len(content.splitlines()),
-            "words": len(content.split()),
-            "characters": len(content),
-            "status": "success"
-        }
-        
-        self.processed_count += 1
-        return result
-
-class ValidationError(Exception):
-    \"\"\"Custom exception for validation errors.\"\"\"
-    pass
-""",
-            
-            "src/utils.py": """\"\"\"Utility functions and helpers.\"\"\"
-
-import json
-import logging
-import sys
-from pathlib import Path
-from typing import Dict, Any, Optional
-
-def setup_logging(level: int = logging.INFO) -> None:
-    \"\"\"Configure application logging.\"\"\"
-    logging.basicConfig(
-        level=level,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.StreamHandler(sys.stdout)
-        ]
-    )
-
-def load_config(config_path: str) -> Dict[str, Any]:
-    \"\"\"Load configuration from JSON file.\"\"\"
-    default_config = {
-        "max_file_size": 10 * 1024 * 1024,  # 10MB
-        "supported_formats": [".json", ".txt", ".md"],
-        "output_format": "json",
-        "enable_logging": True
-    }
-    
-    if not config_path:
-        return default_config
-        
-    config_file = Path(config_path)
-    if not config_file.exists():
-        logging.warning(f"Config file not found: {config_path}, using defaults")
-        return default_config
-        
-    try:
-        with open(config_file, 'r') as f:
-            user_config = json.load(f)
-        default_config.update(user_config)
-        return default_config
-    except json.JSONDecodeError as e:
-        logging.error(f"Invalid config file: {e}")
-        return default_config
-
-def validate_input(file_path: str, config: Dict[str, Any]) -> bool:
-    \"\"\"Validate input file against configuration.\"\"\"
-    path = Path(file_path)
-    
-    if not path.exists():
-        return False
-        
-    if path.stat().st_size > config.get("max_file_size", float('inf')):
-        return False
-        
-    if path.suffix not in config.get("supported_formats", []):
-        return False
-        
-    return True
-""",
-            
-            "tests/test_core.py": """\"\"\"Tests for core functionality.\"\"\"
-
-import json
-import tempfile
-import unittest
-from pathlib import Path
-
-from src.core import DataProcessor, ValidationError
-
-class TestDataProcessor(unittest.TestCase):
-    \"\"\"Test cases for DataProcessor class.\"\"\"
-    
-    def setUp(self):
-        \"\"\"Set up test fixtures.\"\"\"
-        self.config = {
-            "max_file_size": 1024,
-            "supported_formats": [".json", ".txt"]
-        }
-        self.processor = DataProcessor(self.config)
-    
-    def test_process_json_file(self):
-        \"\"\"Test JSON file processing.\"\"\"
-        test_data = [{"id": 1, "name": "test"}, {"id": 2, "name": "example"}]
-        
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            json.dump(test_data, f)
-            temp_path = f.name
-        
-        try:
-            result = self.processor.process_file(temp_path)
-            self.assertEqual(result["type"], "json")
-            self.assertEqual(result["records"], 2)
-            self.assertEqual(result["status"], "success")
-        finally:
-            Path(temp_path).unlink()
-    
-    def test_process_text_file(self):
-        \"\"\"Test text file processing.\"\"\"
-        test_content = "Hello world\\nThis is a test\\nWith multiple lines"
-        
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
-            f.write(test_content)
-            temp_path = f.name
-        
-        try:
-            result = self.processor.process_file(temp_path)
-            self.assertEqual(result["type"], "text")
-            self.assertEqual(result["lines"], 3)
-            self.assertGreater(result["words"], 5)
-        finally:
-            Path(temp_path).unlink()
-
-if __name__ == '__main__':
-    unittest.main()
-""",
-            
-            "config/default.json": """{
-    "max_file_size": 52428800,
-    "supported_formats": [".json", ".txt", ".md", ".csv"],
-    "output_format": "json",
-    "enable_logging": true,
-    "log_level": "INFO",
-    "processing_threads": 4,
-    "cache_enabled": true
-}""",
-            
-            "requirements.txt": """# Production dependencies
-requests>=2.28.0
-click>=8.0.0
-pyyaml>=6.0
-pandas>=1.5.0
-
-# Development dependencies
-pytest>=7.0.0
-black>=22.0.0
-flake8>=5.0.0
-mypy>=0.990
-""",
-            
-            "docs/architecture.md": """# Architecture Documentation
-
-## Overview
-Awesome Project follows a modular architecture with clear separation of concerns.
-
-## Core Components
-
-### Data Processing Engine
-- `DataProcessor`: Main processing class
-- Supports multiple file formats
-- Configurable processing pipeline
-
-### Configuration System
-- JSON-based configuration
-- Environment-specific configs
-- Runtime configuration validation
-
-### Error Handling
-- Custom exception types
-- Comprehensive logging
-- Graceful degradation
-
-## Data Flow
-1. Input validation
-2. Configuration loading  
-3. File processing
-4. Result generation
-5. Error reporting
-""",
-            
-            ".github/workflows/ci.yml": """name: CI
-
-on:
-  push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main ]
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: [3.8, 3.9, "3.10", "3.11"]
-
-    steps:
-    - uses: actions/checkout@v3
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v3
-      with:
-        python-version: ${{ matrix.python-version }}
-    
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-    
-    - name: Run tests
-      run: |
-        python -m pytest tests/
-    
-    - name: Lint with flake8
-      run: |
-        flake8 src/ tests/
-"""
-        }
-        
-        # Write all project files
-        for file_path, content in project_files.items():
-            full_path = project_dir / file_path
-            write_file(str(full_path), content)
-        
-        print(f"✅ Created realistic project with {len(project_files)} files")
-    
-class TestErrorHandling:
-    """Test error handling in subagent scenarios."""
-    
-    @pytest.mark.asyncio
-    async def test_agent_with_failing_tools(self, openai_client):
-        """Test handling of agents with tools that fail."""
-        
-        def failing_tool(input_text: str) -> str:
-            """A tool that always fails."""
-            raise ValueError("This tool always fails!")
-        
-        def working_tool(input_text: str) -> str:
-            """A tool that works."""
-            return f"Processed: {input_text}"
-        
-        agent_specs = [
-            (
-                "You are a test agent with mixed tools. Use the working_tool to process text.",
-                "Process the text 'test input' using your available tools",
-                [working_tool, failing_tool]
-            )
-        ]
-        
-        results = []
-        async for result in spawn_parallel_agents(
-            client=openai_client,
-            agent_specs=agent_specs,
-            model="gpt-4o-mini",
-            max_iterations=2
-        ):
-            results.append(result)
-            if result.is_final:
-                break
-        
-        # Should have completed (though may have had tool failures)
-        assert any(r.is_final for r in results)
-        final_result = [r for r in results if r.is_final][0]
-        assert final_result.agent_index == 0
-    
-    @pytest.mark.asyncio  
-    async def test_agent_timeout_scenario(self, openai_client):
-        """Test agent behavior with very low iteration limits."""
-        
-        agent_specs = [
-            (
-                "You are a simple agent. Respond briefly.",
-                "Say hello and stop",
-                [lambda: "Hello World"]
-            )
-        ]
-        
-        results = []
-        async for result in spawn_parallel_agents(
-            client=openai_client,
-            agent_specs=agent_specs,
-            model="gpt-4o-mini",
-            max_iterations=1  # Very low limit
-        ):
-            results.append(result)
-            if result.is_final:
-                break
-        
-        # Should complete quickly with low iteration limit
-        assert any(r.is_final for r in results)
-
-
-class TestSubagentWithRun:
-    """Test using subagent functionality through toololo.Run."""
-    
-    @pytest.mark.asyncio
-    async def test_subagent_analysis_tool_in_run(self, openai_client):
-        """Test a tool that uses subagents internally, called through toololo.Run."""
-        
-        async def analyze_project_with_subagents(project_path: str, client: openai.AsyncOpenAI = None) -> str:
-            """Tool that performs project analysis using multiple subagents internally.
-            
-            This tool demonstrates using subagents as part of a larger workflow
-            where the subagent functionality is encapsulated in a tool.
-            """
+        # Level 2 tool: Get average temperature for a county (spawns city agents)
+        async def get_county_temperature_average(county_name: str, client: openai.AsyncOpenAI = None) -> str:
+            """Level 2 Agent Tool: Get average temperature for a county by spawning city agents."""
             if not client:
-                return "Error: OpenAI client required for analysis"
+                return f"No client available for {county_name}"
             
-            # Create a simple test project
-            with tempfile.TemporaryDirectory() as tmpdir:
-                test_project = Path(tmpdir) / "test_project"
-                test_project.mkdir()
+            try:
+                cities = area_to_subareas(county_name)
+                if not cities:
+                    return f"No cities found for {county_name}"
                 
-                # Create sample files
-                write_file(str(test_project / "main.py"), """
-def hello():
-    print("Hello World")
-
-if __name__ == "__main__":
-    hello()
-""")
-                write_file(str(test_project / "README.md"), "# Test Project\nA simple test project.")
+                print(f"    🏙️  County agent processing {len(cities)} cities in {county_name}")
                 
-                # Define subagents for analysis
-                agent_specs = [
-                    (
-                        "You are a code structure analyst. Be concise.",
-                        f"Analyze the Python files in {test_project}. Give a brief summary.",
-                        [count_python_files, list_directory]
-                    ),
-                    (
-                        "You are a documentation reviewer. Be concise.",
-                        f"Review the documentation in {test_project}. Give a brief summary.",
-                        [find_readme_files, analyze_file_sizes]
-                    )
-                ]
+                # Spawn city agents (Level 3)
+                city_agent_specs = []
+                for city in cities:
+                    city_agent_specs.append((
+                        f"You are a City Temperature Agent for {city}. Get the temperature for your city.",
+                        f"Get the temperature for {city} using your temperature tool.",
+                        [get_city_temperature, is_city, city_to_latlng, latlng_temperature]
+                    ))
                 
-                # Collect results from subagents
-                results = []
-                agent_completed = {0: False, 1: False}
+                # Collect temperature results from city agents
+                city_temperatures = []
+                completed_cities = set()
                 
-                try:
-                    async for output in spawn_parallel_agents(
-                        client=client,
-                        agent_specs=agent_specs,
-                        model="gpt-4o-mini",
-                        max_iterations=2
-                    ):
-                        if output.is_final:
-                            agent_completed[output.agent_index] = True
-                            if output.error:
-                                results.append(f"Agent {output.agent_index} error: {output.error}")
-                            else:
-                                results.append(f"Agent {output.agent_index} completed successfully")
-                        
-                        # Break when both agents complete
-                        if all(agent_completed.values()):
-                            break
-                    
-                    # Summarize results
-                    successful_agents = sum(1 for completed in agent_completed.values() if completed)
-                    return f"Project analysis completed. {successful_agents}/2 agents successful. Results: {'; '.join(results)}"
-                    
-                except Exception as e:
-                    return f"Subagent analysis failed: {str(e)}"
-        
-        # Use the subagent tool through toololo.Run
-        run = Run(
-            client=openai_client,
-            messages="Analyze a test project using your subagent analysis capabilities.",
-            model="gpt-4o-mini",
-            tools=[analyze_project_with_subagents],
-            system_prompt="You are a project analysis coordinator. Use your subagent analysis tool to analyze projects.",
-            max_iterations=3
-        )
-        
-        # Collect outputs from the run
-        outputs = []
-        async for output in run:
-            outputs.append(output)
-            
-            # Look for successful tool usage
-            if isinstance(output, ToolResult) and output.success:
-                # Verify the tool result indicates subagent usage
-                assert "agents successful" in output.result.lower() or "analysis completed" in output.result.lower()
-                break
-        
-        # Verify we got some outputs and at least one was a tool result
-        assert len(outputs) > 0
-        assert any(isinstance(output, ToolResult) for output in outputs)
-        
-        # Find the tool result and verify it shows subagent usage
-        tool_results = [output for output in outputs if isinstance(output, ToolResult)]
-        assert len(tool_results) > 0
-        
-        # At least one tool result should indicate successful subagent usage
-        successful_tool_results = [tr for tr in tool_results if tr.success]
-        assert len(successful_tool_results) > 0
-    
-    @pytest.mark.asyncio
-    async def test_multi_level_subagent_coordination(self, openai_client):
-        """Test a coordinator agent that manages multiple subagent teams.
-        
-        This demonstrates a more complex scenario where a main agent
-        coordinates multiple subagent groups for different tasks.
-        """
-        
-        async def coordinate_analysis_teams(task_description: str, client: openai.AsyncOpenAI = None) -> str:
-            """Meta-tool that coordinates multiple subagent analysis teams."""
-            if not client:
-                return "Error: OpenAI client required"
-            
-            with tempfile.TemporaryDirectory() as tmpdir:
-                # Create test data
-                project_dir = Path(tmpdir) / "complex_project"
-                project_dir.mkdir()
-                
-                # Create multiple files to analyze
-                write_file(str(project_dir / "app.py"), "def main(): return 'app'")
-                write_file(str(project_dir / "utils.py"), "def helper(): return 'utils'") 
-                write_file(str(project_dir / "test.py"), "def test(): assert True")
-                write_file(str(project_dir / "README.md"), "# Complex Project")
-                write_file(str(project_dir / "config.json"), '{"version": "1.0"}')
-                
-                # Team 1: Code Analysis Team
-                code_team_specs = [
-                    ("You are a Python code analyst. Be brief.", f"Count Python files in {project_dir}", [count_python_files]),
-                    ("You are a complexity analyst. Be brief.", f"Assess code complexity in {project_dir}", [assess_code_complexity])
-                ]
-                
-                # Team 2: Documentation Team  
-                docs_team_specs = [
-                    ("You are a documentation finder. Be brief.", f"Find documentation in {project_dir}", [find_readme_files]),
-                    ("You are a file analyzer. Be brief.", f"Analyze file structure in {project_dir}", [analyze_file_sizes])
-                ]
-                
-                teams_results = []
-                
-                # Run Team 1
-                team1_results = []
-                async for output in spawn_parallel_agents(
-                    client=client, 
-                    agent_specs=code_team_specs,
-                    model="gpt-4o-mini", 
-                    max_iterations=2
-                ):
-                    if output.is_final:
-                        team1_results.append(f"Code team agent {output.agent_index} completed")
-                        if len(team1_results) == 2:  # Both agents done
-                            break
-                
-                teams_results.append(f"Code analysis team: {len(team1_results)} agents completed")
-                
-                # Run Team 2  
-                team2_results = []
-                async for output in spawn_parallel_agents(
+                async for result in spawn_parallel_agents(
                     client=client,
-                    agent_specs=docs_team_specs, 
+                    agent_specs=city_agent_specs,
                     model="gpt-4o-mini",
-                    max_iterations=2
+                    max_iterations=3
                 ):
-                    if output.is_final:
-                        team2_results.append(f"Docs team agent {output.agent_index} completed")
-                        if len(team2_results) == 2:  # Both agents done
-                            break
+                    if result.is_final:
+                        completed_cities.add(result.agent_index)
+                        if result.error:
+                            print(f"      ❌ City agent {result.agent_index} failed: {result.error}")
+                        else:
+                            print(f"      ✅ City agent {result.agent_index} ({cities[result.agent_index] if result.agent_index < len(cities) else result.agent_index}) completed")
+                    
+                    # Look for temperature outputs in tool results
+                    elif isinstance(result.output, ToolResult) and result.output.success:
+                        temp_result = str(result.output.result_content)
+                        if "Temperature for" in temp_result and "°F" in temp_result:
+                            try:
+                                # Extract temperature value
+                                temp_str = temp_result.split(":")[-1].strip().replace("°F", "")
+                                temp_value = float(temp_str)
+                                city_temperatures.append(temp_value)
+                                print(f"      📊 Got temperature: {temp_value}°F from city agent {result.agent_index}")
+                            except (ValueError, IndexError):
+                                print(f"      ⚠️  Could not parse temperature from: {temp_result}")
+                    
+                    # Break when all city agents complete
+                    if len(completed_cities) == len(city_agent_specs):
+                        break
                 
-                teams_results.append(f"Documentation team: {len(team2_results)} agents completed")
+                # Calculate average
+                if city_temperatures:
+                    avg_temp = sum(city_temperatures) / len(city_temperatures)
+                    return f"Average temperature for {county_name}: {avg_temp:.1f}°F (from {len(city_temperatures)} cities)"
+                else:
+                    return f"Could not get temperature data for {county_name}"
                 
-                return f"Multi-team analysis completed. Results: {'; '.join(teams_results)}"
+            except Exception as e:
+                return f"Error processing county {county_name}: {str(e)}"
         
-        # Use the coordination tool through Run
-        run = Run(
+        # Level 1: State agent coordinates county agents
+        state_agent_spec = [(
+            "You are a State Temperature Coordinator. You manage county temperature agents to get "
+            "the average temperature for your state. Coordinate county agents to get temperatures.",
+            f"Get the average temperature for California by coordinating with county agents. "
+            f"Use your county temperature tool to process each county in the state.",
+            [get_county_temperature_average, area_to_subareas, is_city]
+        )]
+        
+        print(f"\n🌡️  Starting State Temperature Averaging")
+        print(f"📍 State: California")
+        print("🔄 Structure: State → County Agents → City Agents → Temperature Lookup")
+        
+        # Track the temperature averaging process
+        state_results = []
+        state_completed = False
+        final_temperatures = []
+        
+        # Run the state coordinator agent
+        async for result in spawn_parallel_agents(
             client=openai_client,
-            messages="Coordinate a multi-team analysis of a complex project using subagent teams.",
+            agent_specs=state_agent_spec,
             model="gpt-4o-mini",
-            tools=[coordinate_analysis_teams],
-            system_prompt="You are a meta-coordinator that manages multiple analysis teams using subagents.",
-            max_iterations=3
-        )
+            max_iterations=6
+        ):
+            if result.is_final:
+                state_completed = True
+                if result.error:
+                    print(f"❌ State coordinator failed: {result.error}")
+                else:
+                    print(f"✅ State temperature averaging completed")
+            else:
+                state_results.append(result.output)
+                output_type = type(result.output).__name__
+                print(f"🔄 State Coordinator: {output_type}")
+                
+                # Look for county average temperatures in tool results
+                if isinstance(result.output, ToolResult) and result.output.success:
+                    county_result = str(result.output.result_content)
+                    if "Average temperature for" in county_result and "°F" in county_result:
+                        try:
+                            # Extract temperature value
+                            temp_str = county_result.split(":")[-1].strip().split("°F")[0].strip()
+                            temp_value = float(temp_str.split("(")[0].strip())
+                            final_temperatures.append(temp_value)
+                            print(f"📊 County average: {temp_value}°F")
+                        except (ValueError, IndexError):
+                            print(f"⚠️  Could not parse county temperature from: {county_result}")
+            
+            if state_completed:
+                break
         
-        # Execute and verify
-        tool_results = []
-        async for output in run:
-            if isinstance(output, ToolResult):
-                tool_results.append(output)
-                if output.success and "multi-team analysis completed" in output.result.lower():
-                    # Found successful coordination
-                    assert "code analysis team" in output.result.lower()
-                    assert "documentation team" in output.result.lower()
-                    break
+        # Verify the recursive structure worked and calculate final state average
+        print(f"\n📊 Temperature Averaging Summary:")
+        print(f"  State Coordinator Status: {'✅ Success' if state_completed else '❌ Failed'}")
+        print(f"  Total Operations: {len(state_results)}")
+        print(f"  County Averages Collected: {len(final_temperatures)}")
         
-        # Verify we got successful tool coordination
-        assert len(tool_results) > 0
-        assert any(tr.success for tr in tool_results)
+        if final_temperatures:
+            state_average = sum(final_temperatures) / len(final_temperatures)
+            print(f"  Final California Average: {state_average:.1f}°F")
+        else:
+            print(f"  ❌ No temperature data collected")
+        
+        # Look for evidence of recursive operations in tool results
+        county_operations = 0
+        city_references = 0
+        
+        for output in state_results:
+            if isinstance(output, ToolResult) and output.success:
+                result_text = str(output.result_content).lower()
+                if "average temperature for" in result_text and "county" in result_text:
+                    county_operations += 1
+                if "cities" in result_text:
+                    city_references += 1
+        
+        print(f"  County Operations: {county_operations}")
+        print(f"  City References: {city_references}")
+        
+        # Assertions for recursive behavior and temperature collection
+        assert state_completed, "State coordinator should complete successfully"
+        assert len(state_results) > 0, "Should have some temperature operations"
+        assert county_operations > 0, "Should have evidence of county-level processing"
+        assert len(final_temperatures) > 0, "Should have collected county temperature averages"
+        assert all(isinstance(temp, float) and 0 < temp < 200 for temp in final_temperatures), "Temperatures should be reasonable values"
+        
+        # Verify we got results for multiple counties (California has 3 counties in our test data)
+        expected_counties = len(STATE_TO_COUNTIES["California"])
+        print(f"  Expected Counties: {expected_counties}")
+        
+        print(f"🎉 Recursive temperature averaging verified!")
+        print(f"🌡️  Successfully computed temperature averages across {len(final_temperatures)} counties")
+        
+        return {
+            "state_success": state_completed,
+            "total_operations": len(state_results),
+            "county_operations": county_operations,
+            "final_temperatures": final_temperatures,
+            "state_average": sum(final_temperatures) / len(final_temperatures) if final_temperatures else None
+        }
+    
+    def test_deterministic_tools(self):
+        """Test that the deterministic tools work correctly."""
+        # Test area_to_subareas
+        ca_counties = area_to_subareas("California")
+        assert len(ca_counties) == 3
+        assert "Los Angeles County" in ca_counties
+        
+        la_cities = area_to_subareas("Los Angeles County")
+        assert len(la_cities) == 3
+        assert "Los Angeles" in la_cities
+        
+        # Test is_city
+        assert is_city("Los Angeles") == True
+        assert is_city("Los Angeles County") == False
+        assert is_city("California") == False
+        
+        # Test city_to_latlng
+        la_coords = city_to_latlng("Los Angeles")
+        assert isinstance(la_coords, tuple)
+        assert len(la_coords) == 2
+        assert isinstance(la_coords[0], float)
+        assert isinstance(la_coords[1], float)
+        
+        # Test error handling
+        with pytest.raises(ValueError):
+            city_to_latlng("Not A City")
+        
+        with pytest.raises(ValueError):
+            area_to_subareas("Not An Area")
+        
+        # Test latlng_temperature
+        temp1 = latlng_temperature(25.0, -80.0)  # Miami-like (south, east)
+        temp2 = latlng_temperature(45.0, -120.0)  # Seattle-like (north, west)
+        assert isinstance(temp1, float)
+        assert isinstance(temp2, float)
+        assert temp1 > temp2, "Southern/Eastern locations should be warmer"
+        
+    def test_temperature_progression(self):
+        """Test that temperature increases as we go south and east."""
+        # Test north to south (latitude decrease = temperature increase)
+        north_temp = latlng_temperature(40.0, -100.0)
+        south_temp = latlng_temperature(30.0, -100.0)
+        assert south_temp > north_temp, "Southern locations should be warmer"
+        
+        # Test west to east (longitude increase = temperature increase)
+        west_temp = latlng_temperature(35.0, -120.0)
+        east_temp = latlng_temperature(35.0, -80.0)
+        assert east_temp > west_temp, "Eastern locations should be warmer"
+        
+        # Test actual city temperatures make sense
+        la_temp = latlng_temperature(*CITY_COORDINATES["Los Angeles"])
+        miami_temp = latlng_temperature(*CITY_COORDINATES["Miami"])
+        houston_temp = latlng_temperature(*CITY_COORDINATES["Houston"])
+        
+        # Miami should be warmest (furthest south and east)
+        assert miami_temp > la_temp
+        assert miami_temp > houston_temp
