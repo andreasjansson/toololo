@@ -140,7 +140,7 @@ class ParallelSubagents:
                 messages=prompt,
                 model=self.model,
                 tools=self.tools,
-                system_prompt=sys_prompt,
+                system_prompt=system_prompt,
                 max_tokens=self.max_tokens,
                 reasoning_max_tokens=self.reasoning_max_tokens,
                 max_iterations=self.max_iterations
