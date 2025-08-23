@@ -258,13 +258,19 @@ async def test_state_temperature_averaging(openai_client):
         
         # Track spawn_agents results
         elif isinstance(output, ToolResult) and output.success and output.func and "spawn_agents" in output.func.__name__:
-            # Debug what we actually got
-            print(f"✅ Spawn result type: {type(output.content)}")
-            print(f"✅ Spawn result value: {repr(output.content)}")
+            # Parse the JSON string back to list (tools serialize return values)
+            messages = output.content
+            if isinstance(messages, str):
+                try:
+                    import json
+                    messages = json.loads(messages)
+                except json.JSONDecodeError:
+                    print(f"❌ Failed to parse spawn result as JSON: {output.content}")
+                    messages = []
             
-            if isinstance(output.content, list):
-                print(f"✅ Spawn result: {len(output.content)} final messages from subagents")
-                for i, msg in enumerate(output.content):
+            if isinstance(messages, list):
+                print(f"✅ Spawn result: {len(messages)} final messages from subagents")
+                for i, msg in enumerate(messages):
                     preview = str(msg)[:80].replace('\n', ' ')
                     print(f"    Agent {i}: {preview}...")
                     
@@ -279,7 +285,7 @@ async def test_state_temperature_averaging(openai_client):
                         except ValueError:
                             pass
             else:
-                print(f"❌ ERROR: Expected list but got {type(output.content)}: {output.content}")
+                print(f"❌ ERROR: Expected list but got {type(messages)}: {messages}")
 
         elif isinstance(output, TextContent):
             text_preview = output.content[:80].replace('\n', ' ')
