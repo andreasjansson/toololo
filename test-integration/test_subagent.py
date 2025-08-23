@@ -199,10 +199,10 @@ async def test_state_temperature_averaging(openai_client):
 
         # Look for text content with temperatures
         elif isinstance(output, TextContent):
-            content_lower = output.text.lower()
+            content_lower = output.content.lower()
             if "temperature" in content_lower and ("california" in content_lower or "average" in content_lower):
-                print(f"  💬 Text with temperature: {output.text[:100]}...")
-                final_result = output.text
+                print(f"  💬 Text with temperature: {output.content[:100]}...")
+                final_result = output.content
 
     # Verify the recursive structure worked
     print(f"\n📊 Temperature Averaging Summary:")
