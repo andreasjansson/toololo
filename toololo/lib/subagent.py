@@ -2,8 +2,7 @@
 
 import asyncio
 import logging
-from typing import Any, Callable, List, Tuple, AsyncIterator, Optional, Union
-
+from typing import Any, Callable, AsyncIterator, Optional
 from dataclasses import dataclass
 import openai
 
@@ -29,81 +28,71 @@ class ParallelSubagents:
     def __init__(
         self,
         client: openai.AsyncOpenAI,
-        model: str = "gpt-5-mini",
+        tools: list[Callable[..., Any]] = None,
+        model: str = "gpt-4",
         max_tokens: int = 8192,
         reasoning_max_tokens: Optional[int] = None,
         max_iterations: int = 50
     ):
         self.client = client
+        self.tools = tools or []
         self.model = model
         self.max_tokens = max_tokens
         self.reasoning_max_tokens = reasoning_max_tokens
         self.max_iterations = max_iterations
-        self._agents: List[Run] = []
-        self._agent_ids: List[str] = []
-    
-    def _bind_client_to_tools(self, tools: List[Callable[..., Any]]) -> List[Callable[..., Any]]:
-        """Bind the OpenAI client to tools that need it using partial application."""
-        bound_tools = []
-        
-        for tool in tools:
-            import inspect
-            sig = inspect.signature(tool)
-            
-            # Check if the tool expects a 'client' parameter
-            if 'client' in sig.parameters:
-                # Bind the client using partial
-                bound_tool = partial(tool, client=self.client)
-                # Copy over the function metadata
-                bound_tool.__name__ = tool.__name__
-                bound_tool.__doc__ = tool.__doc__
-                if hasattr(tool, '__annotations__'):
-                    bound_tool.__annotations__ = tool.__annotations__
-                bound_tools.append(bound_tool)
-            else:
-                # Tool doesn't need client, use as-is
-                bound_tools.append(tool)
-        
-        return bound_tools
+        self._agents: list[Run] = []
+        self._agent_ids: list[str] = []
     
     async def spawn_agents(
         self,
-        agent_specs: List[Tuple[str, str, List[Callable[..., Any]]]]
+        agent_prompts: list[str] | list[tuple[str, str]],
+        system_prompt: str | list[str] = ""
     ) -> AsyncIterator[SubagentOutput]:
         """Spawn multiple subagents and yield their outputs as they come.
         
         Args:
-            agent_specs: List of (system_prompt, prompt, tools) tuples
+            agent_prompts: List of prompts, or list of (system_prompt, prompt) tuples
+            system_prompt: Default system prompt(s) to use. If string, used for all agents.
+                         If list, must match length of agent_prompts (ignored for tuples).
             
         Yields:
             SubagentOutput containing outputs from each subagent as they execute
         """
-        logger.info(f"Spawning {len(agent_specs)} parallel subagents")
+        logger.info(f"Spawning {len(agent_prompts)} parallel subagents")
         
         # Create agents
         self._agents = []
         self._agent_ids = []
         
-        for i, (system_prompt, prompt, tools) in enumerate(agent_specs):
-            agent_id = f"agent_{i}_{hash((system_prompt, prompt))}"
+        for i, item in enumerate(agent_prompts):
+            # Handle different input formats
+            if isinstance(item, tuple):
+                # (system_prompt, prompt) tuple
+                sys_prompt, prompt = item
+            else:
+                # Just a prompt string
+                prompt = item
+                if isinstance(system_prompt, list):
+                    sys_prompt = system_prompt[i] if i < len(system_prompt) else ""
+                else:
+                    sys_prompt = system_prompt
+            
+            agent_id = f"agent_{i}_{hash((sys_prompt, prompt))}"
             self._agent_ids.append(agent_id)
             
-            # Bind client to tools that need it
-            bound_tools = self._bind_client_to_tools(tools)
-            
-            # Create the agent
+            # Create the agent with stored tools
             agent = Run(
                 client=self.client,
                 messages=prompt,
                 model=self.model,
-                tools=bound_tools,
-                system_prompt=system_prompt,
+                tools=self.tools,
+                system_prompt=sys_prompt,
                 max_tokens=self.max_tokens,
                 reasoning_max_tokens=self.reasoning_max_tokens,
                 max_iterations=self.max_iterations
             )
             self._agents.append(agent)
-            logger.info(f"Created subagent {i} ({agent_id}) with {len(bound_tools)} tools")
+            logger.info(f"Created subagent {i} ({agent_id}) with {len(self.tools)} tools")
         
         # Run all agents in parallel and yield outputs as they come
         async for output in self._run_agents_parallel():
@@ -185,7 +174,7 @@ class ParallelSubagents:
 
 async def spawn_parallel_agents(
     client: openai.AsyncOpenAI,
-    agent_specs: List[Tuple[str, str, List[Callable[..., Any]]]],
+    agent_specs: list[tuple[str, str, list[Callable[..., Any]]]],
     model: str = "gpt-4",
     max_tokens: int = 8192,
     reasoning_max_tokens: Optional[int] = None,
@@ -193,8 +182,8 @@ async def spawn_parallel_agents(
 ) -> AsyncIterator[SubagentOutput]:
     """Spawn multiple subagents in parallel and yield their outputs.
     
-    This is the main function for spawning parallel subagents. Each subagent runs
-    independently and their outputs are yielded as they become available.
+    This is the legacy function for spawning parallel subagents with full specs.
+    Consider using ParallelSubagents directly for simpler usage.
     
     Args:
         client: OpenAI async client
@@ -224,13 +213,18 @@ async def spawn_parallel_agents(
             print(f"Agent {result.agent_index}: {result.output}")
         ```
     """
+    # Create agent prompts from specs
+    agent_prompts = [(system, prompt) for system, prompt, _ in agent_specs]
+    tools = agent_specs[0][2] if agent_specs else []  # Use tools from first spec
+    
     manager = ParallelSubagents(
         client=client,
+        tools=tools,
         model=model,
         max_tokens=max_tokens,
         reasoning_max_tokens=reasoning_max_tokens,
         max_iterations=max_iterations
     )
     
-    async for output in manager.spawn_agents(agent_specs):
+    async for output in manager.spawn_agents(agent_prompts):
         yield output
