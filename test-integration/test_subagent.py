@@ -74,30 +74,44 @@ CITY_COORDINATES = {
 }
 
 
-def area_to_subareas(area: str) -> List[str]:
+def area_to_subareas(area: str) -> list[str]:
     """Return a list of subareas for an area. For a state, return counties, for counties, return cities."""
+    print(f"🗺️  Getting subareas for: {area}")
     if area in STATE_TO_COUNTIES:
-        return STATE_TO_COUNTIES[area]
+        result = STATE_TO_COUNTIES[area]
+        print(f"   State -> Counties: {result}")
+        return result
     elif area in COUNTY_TO_CITIES:
-        return COUNTY_TO_CITIES[area]
+        result = COUNTY_TO_CITIES[area]
+        print(f"   County -> Cities: {result}")
+        return result
     else:
+        print(f"   ❌ Unknown area: {area}")
         raise ValueError(f"Unknown area: {area}")
 
 
 def is_city(area_or_city: str) -> bool:
     """Return true if it's a city."""
-    return area_or_city in CITY_COORDINATES
+    result = area_or_city in CITY_COORDINATES
+    print(f"🏙️  Is '{area_or_city}' a city? {result}")
+    return result
 
 
-def city_to_latlng(city: str) -> Tuple[float, float]:
+def city_to_latlng(city: str) -> tuple[float, float]:
     """Return a lat/lng for a city. Throw an error if it's not a city."""
+    print(f"📍 Getting coordinates for: {city}")
     if city not in CITY_COORDINATES:
+        print(f"   ❌ Unknown city: {city}")
         raise ValueError(f"Unknown city: {city}")
-    return CITY_COORDINATES[city]
+    result = CITY_COORDINATES[city]
+    print(f"   Coordinates: {result}")
+    return result
 
 
 def latlng_temperature(lat: float, lng: float) -> float:
     """Deterministically return temperature for a lat/lng. The further south/east, the warmer."""
+    print(f"🌡️  Calculating temperature for: ({lat:.4f}, {lng:.4f})")
+    
     # Base temperature starts at 50°F
     base_temp = 50.0
     
@@ -109,7 +123,9 @@ def latlng_temperature(lat: float, lng: float) -> float:
     # Longitude ranges roughly from -122 to -73 in our data
     lng_adjustment = (lng + 122) * 0.3  # Warmer as lng gets larger (further east)
     
-    return base_temp + lat_adjustment + lng_adjustment
+    result = base_temp + lat_adjustment + lng_adjustment
+    print(f"   Temperature: {result:.1f}°F")
+    return result
 
 
 def test_deterministic_tools():
