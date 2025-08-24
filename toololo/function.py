@@ -382,7 +382,7 @@ def make_compatible(
         for name in param_names:
             if name in kwargs:
                 args.append(kwargs[name])
-            elif sig.parameters[name].default is not inspect.Parameter.empty:
+            elif filtered_sig.parameters[name].default is not inspect.Parameter.empty:
                 # Skip if parameter has default value and not provided
                 continue
             else:
