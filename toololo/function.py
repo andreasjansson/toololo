@@ -100,8 +100,8 @@ def get_function_info(func: Callable[..., Any]) -> str:
 
         # Get return annotation if available
         try:
-            if signature.return_annotation != inspect.Signature.empty:
-                info.append(f"Return type: {signature.return_annotation}")
+            if filtered_signature.return_annotation != inspect.Signature.empty:
+                info.append(f"Return type: {filtered_signature.return_annotation}")
         except (ValueError, TypeError, UnboundLocalError):
             pass
 
