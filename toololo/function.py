@@ -192,9 +192,16 @@ Only respond with the tool use schema in a JSON format, nothing else. Follow the
     # Try to get the source code, or fall back to function info
     try:
         source = inspect.getsource(func)
-        user_message = (
-            f"Create a tool use schema for this function:\n\n```python\n{source}\n```"
-        )
+        
+        # Check if function has any _toololo_ parameters to ignore
+        sig = inspect.signature(func)
+        toololo_params = [name for name in sig.parameters.keys() if name.startswith("_toololo_")]
+        
+        user_message = f"Create a tool use schema for this function:\n\n```python\n{source}\n```"
+        
+        if toololo_params:
+            user_message += f"\n\nIMPORTANT: Ignore the following parameters when creating the schema (do not include them in the parameters object): {', '.join(toololo_params)}"
+            
     except (TypeError, OSError):
         # For built-in functions, use the signature and docstring
         function_info = get_function_info(func)
