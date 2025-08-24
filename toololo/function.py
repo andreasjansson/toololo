@@ -349,24 +349,24 @@ def make_compatible(
     Works with both sync and async functions.
     """
     sig = inspect.signature(func)
+    filtered_sig = filter_signature(sig)
 
     # If no parameters or doesn't need wrapping, return as-is
-    if not sig.parameters:
+    if not filtered_sig.parameters:
         return func
 
-    # Check if the function needs wrapping (has any POSITIONAL_ONLY params, excluding _toololo_ params)
+    # Check if the function needs wrapping (has any POSITIONAL_ONLY params in filtered params)
     needs_wrapping = any(
         p.kind == inspect.Parameter.POSITIONAL_ONLY 
-        for name, p in sig.parameters.items() 
-        if not name.startswith("_toololo_")
+        for p in filtered_sig.parameters.values()
     )
 
     # If no wrapping needed, return as-is
     if not needs_wrapping:
         return func
 
-    # Get ordered parameter names for mapping kwargs to args, excluding _toololo_ parameters
-    param_names = [name for name in sig.parameters.keys() if not name.startswith("_toololo_")]
+    # Get ordered parameter names for mapping kwargs to args (already filtered)
+    param_names = list(filtered_sig.parameters.keys())
 
     # Common logic to prepare positional arguments from kwargs
     def prepare_args(kwargs):
