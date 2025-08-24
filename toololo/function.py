@@ -73,6 +73,8 @@ def get_function_info(func: Callable[..., Any]) -> str:
             # Get parameter details
             info.append("Parameters:")
             for param_name, param in signature.parameters.items():
+                if param_name.startswith("_toololo_"):
+                    continue
                 param_info = f"  - {param_name}"
                 if param.annotation != inspect.Parameter.empty:
                     param_info += f" ({param.annotation})"
