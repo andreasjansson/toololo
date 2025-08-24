@@ -77,13 +77,12 @@ def get_function_info(func: Callable[..., Any]) -> str:
         # Get signature
         try:
             signature = inspect.signature(func)
-            info.append(f"Signature: {signature}")
+            filtered_signature = filter_signature(signature)
+            info.append(f"Signature: {filtered_signature}")
 
             # Get parameter details
             info.append("Parameters:")
-            for param_name, param in signature.parameters.items():
-                if param_name.startswith("_toololo_"):
-                    continue
+            for param_name, param in filtered_signature.parameters.items():
                 param_info = f"  - {param_name}"
                 if param.annotation != inspect.Parameter.empty:
                     param_info += f" ({param.annotation})"
