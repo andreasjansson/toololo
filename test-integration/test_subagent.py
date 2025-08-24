@@ -1,12 +1,11 @@
-"""Integration tests for toololo.lib.subagent module - Temperature averaging task."""
-
+import json
 import pytest
 import os
 
 import openai
 from toololo.lib.subagent import ParallelSubagents
 from toololo.run import Run
-from toololo.types import TextContent, ToolUseContent, ToolResult
+from toololo.log import PrintMessageLogger
 
 
 @pytest.fixture
@@ -75,42 +74,32 @@ CITY_COORDINATES = {
 
 def area_to_subareas(area: str) -> list[str]:
     """Return a list of subareas for an area. For a state, return counties, for counties, return cities."""
-    print(f"🗺️  Getting subareas for: {area}")
     if area in STATE_TO_COUNTIES:
         result = STATE_TO_COUNTIES[area]
-        print(f"   State -> Counties: {result}")
         return result
     elif area in COUNTY_TO_CITIES:
         result = COUNTY_TO_CITIES[area]
-        print(f"   County -> Cities: {result}")
         return result
     else:
-        print(f"   ❌ Unknown area: {area}")
         raise ValueError(f"Unknown area: {area}")
 
 
 def is_city(area_or_city: str) -> bool:
     """Return true if it's a city."""
     result = area_or_city in CITY_COORDINATES
-    print(f"🏙️  Is '{area_or_city}' a city? {result}")
     return result
 
 
 def city_to_latlng(city: str) -> tuple[float, float]:
     """Return a lat/lng for a city. Throw an error if it's not a city."""
-    print(f"📍 Getting coordinates for: {city}")
     if city not in CITY_COORDINATES:
-        print(f"   ❌ Unknown city: {city}")
         raise ValueError(f"Unknown city: {city}")
     result = CITY_COORDINATES[city]
-    print(f"   Coordinates: {result}")
     return result
 
 
 def latlng_temperature(lat: float, lng: float) -> float:
     """Deterministically return temperature for a lat/lng. The further south/east, the warmer."""
-    print(f"🌡️  Calculating temperature for: ({lat:.4f}, {lng:.4f})")
-    
     # Base temperature starts at 50°F
     base_temp = 50.0
     
@@ -123,7 +112,6 @@ def latlng_temperature(lat: float, lng: float) -> float:
     lng_adjustment = (lng + 122) * 0.3  # Warmer as lng gets larger (further east)
     
     result = base_temp + lat_adjustment + lng_adjustment
-    print(f"   Temperature: {result:.1f}°F")
     return result
 
 
@@ -213,142 +201,43 @@ async def test_state_temperature_averaging(openai_client):
         latlng_temperature,
     ]
 
+    system_prompt = """You are a temperature coordinator.
+
+You MUST use spawn_agents to delegate to subagents, to maximally parallize the computation of the problem in a recursive tree of subagents. For example, once you have the list of counties in a state, spawn subagents to compute average temperature in those counties by first getting the list of cities (areas) in each county, then recursively spawning new subagents for each city to compute temperature in each city in each county.
+
+Return output in JSON format with a `temperature` key (in fahrenheit), e.g. `{"temperature": 67}`. Don't return anything else than the json since the output be be processed programmatically"""
+
     # Create ParallelSubagents manager and add its spawn method as a tool
     subagent_manager = ParallelSubagents(
         client=openai_client, 
         tools=tools,
-        model="openai/gpt-4o-mini",
-        max_iterations=5
+        model="anthropic/claude-sonnet-4",
+        system_prompt=system_prompt,
+        max_iterations=5,
     )
     spawn_agents = subagent_manager.spawn_agents
     tools.append(spawn_agents)
-
-    print(f"\n🌡️  Starting State Temperature Averaging with Run + spawn_agents tool")
-    print(f"📍 State: California")
-    print("🔄 Structure: Run → spawn_agents tool → recursive subagents")
 
     # Run the main state agent using Run
     run = Run(
         client=openai_client,
         messages="Compute the average temperature for the state of California using the spawn_agents tool to delegate work to subagents",
-        model="openai/gpt-4o-mini",
+        model="anthropic/claude-sonnet-4",
         tools=tools,
-        system_prompt="You are a temperature coordinator. You MUST use spawn_agents to delegate temperature computation to specialized subagents. Do not compute temperatures directly - always spawn subagents to handle temperature calculations for different areas.",
-        max_iterations=15
+        system_prompt=system_prompt,
+        max_iterations=15,
+        message_logger=PrintMessageLogger(),
     )
 
     # Track results and temperatures
     outputs = []
-    temperature_values = []
-    spawn_calls = 0
-    final_result = None
 
     # Run and collect outputs
     async for output in run:
         outputs.append(output)
-        
-        # Track spawn_agents calls
-        if isinstance(output, ToolUseContent) and "spawn_agents" in output.name:
-            spawn_calls += 1
-            agent_prompts = output.input.get('agent_prompts', [])
-            print(f"\n📡 Spawn call #{spawn_calls}: {len(agent_prompts)} agents")
-            for i, prompt in enumerate(agent_prompts):
-                prompt_str = str(prompt)[:60]
-                print(f"    Agent {i}: {prompt_str}...")
-        
-        # Track spawn_agents results
-        elif isinstance(output, ToolResult) and output.success and output.func and "spawn_agents" in output.func.__name__:
-            # Parse the JSON string back to list (tools serialize return values)
-            messages = output.content
-            if isinstance(messages, str):
-                try:
-                    import json
-                    messages = json.loads(messages)
-                except json.JSONDecodeError:
-                    print(f"❌ Failed to parse spawn result as JSON: {output.content}")
-                    messages = []
-            
-            if isinstance(messages, list):
-                print(f"✅ Spawn result: {len(messages)} final messages from subagents")
-                for i, msg in enumerate(messages):
-                    preview = str(msg)[:80].replace('\n', ' ')
-                    print(f"    Agent {i}: {preview}...")
-                    
-                    # Extract temperatures for analysis
-                    import re
-                    temp_matches = re.findall(r'(\d+\.?\d*)\s*°?f?', str(msg).lower())
-                    for temp_str in temp_matches:
-                        try:
-                            temp_val = float(temp_str)
-                            if 20 < temp_val < 120:  # Reasonable temperature range
-                                temperature_values.append(temp_val)
-                        except ValueError:
-                            pass
-            else:
-                print(f"❌ ERROR: Expected list but got {type(messages)}: {messages}")
 
-        elif isinstance(output, TextContent):
-            text_preview = output.content[:80].replace('\n', ' ')
-            print(f"💬 Final response: {text_preview}...")
-            
-            # Look for temperatures in final text
-            content_lower = output.content.lower()
-            if "temperature" in content_lower and ("california" in content_lower or "average" in content_lower):
-                final_result = output.content
+    final_content = outputs[-1].content
+    temperature_json = "{" + final_content.rsplit("{", 1)[1]
+    temperature = json.loads(temperature_json)["temperature"]
 
-    # Verify the recursive structure worked
-    print(f"\n📊 Temperature Averaging Summary:")
-    print(f"  Total Outputs: {len(outputs)}")
-    print(f"  Spawn Agent Calls: {spawn_calls}")
-    print(f"  Temperature Values Found: {len(temperature_values)}")
-    if temperature_values:
-        print(f"  Temperature Range: {min(temperature_values):.1f}°F - {max(temperature_values):.1f}°F")
-        overall_avg = sum(temperature_values) / len(temperature_values)
-        print(f"  Overall Average: {overall_avg:.1f}°F")
-    print(f"  Final Result: {final_result}")
-
-    # Count different types of outputs for verification
-    tool_uses = [o for o in outputs if isinstance(o, ToolUseContent)]
-    tool_results = [o for o in outputs if isinstance(o, ToolResult)]
-    text_outputs = [o for o in outputs if isinstance(o, TextContent)]
-
-    print(f"  Tool Uses: {len(tool_uses)} (spawn_agents: {spawn_calls})")
-    print(f"  Tool Results: {len(tool_results)}")
-    print(f"  Text Outputs: {len(text_outputs)}")
-
-    # Assertions for temperature computation 
-    assert len(outputs) > 0, "Should have some outputs"
-    assert len(tool_results) > 0, "Should have some tool results"
-    
-    # Check if we got a final temperature result
-    has_temperature_result = (
-        final_result and 
-        "temperature" in final_result.lower() and 
-        any(char.isdigit() for char in final_result)
-    )
-    
-    # Check if the agent used temperature calculation tools
-    temp_tool_calls = [o for o in outputs if isinstance(o, ToolUseContent) and "latlng_temperature" in o.name]
-    
-    # Either the agent should have used spawn_agents OR calculated temperatures directly
-    assert (spawn_calls > 0) or (len(temp_tool_calls) > 0), \
-        "Agent should either use spawn_agents or calculate temperatures directly"
-    
-    assert has_temperature_result, "Should have computed a final temperature result"
-    
-    # Print success message based on approach used
-    if spawn_calls > 0:
-        print(f"🎉 Recursive subagent spawning verified! Used {spawn_calls} spawn calls.")
-    else:
-        print(f"🎯 Direct temperature computation verified! Used {len(temp_tool_calls)} temperature calculations.")
-
-    print(f"🎉 Recursive temperature averaging with Run + spawn_agents verified!")
-    print(f"🌡️  Successfully processed temperature data through agent hierarchy")
-
-    return {
-        "total_outputs": len(outputs),
-        "spawn_calls": spawn_calls,
-        "temperature_values": temperature_values,
-        "final_result": final_result,
-        "overall_average": sum(temperature_values) / len(temperature_values) if temperature_values else None
-    }
+    assert 65 < temperature < 75

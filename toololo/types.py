@@ -28,14 +28,15 @@ class ToolUseContent(Output):
     input: dict[str, Any]
 
     def __repr__(self) -> str:
-        return f"<<< TOOL USE >>>\nFunction: {self.name}\nArguments: {self.input}"
+        return f"<<< TOOL USE ({self.name}) >>>\n{self.input}"
 
 
 @dataclass(frozen=True)
 class ToolResult(Output):
     success: bool
     func: Callable[..., Any] | None
+    func_name: str
     content: Any
 
     def __repr__(self) -> str:
-        return f"<<< TOOL RESULT >>>\n{self.content}"
+        return f"<<< TOOL RESULT ({self.func_name}) >>>\n{self.content}"
