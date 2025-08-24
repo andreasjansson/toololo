@@ -348,8 +348,8 @@ def make_compatible(
     if not needs_wrapping:
         return func
 
-    # Get ordered parameter names for mapping kwargs to args
-    param_names = list(sig.parameters.keys())
+    # Get ordered parameter names for mapping kwargs to args, excluding _toololo_ parameters
+    param_names = [name for name in sig.parameters.keys() if not name.startswith("_toololo_")]
 
     # Common logic to prepare positional arguments from kwargs
     def prepare_args(kwargs):
