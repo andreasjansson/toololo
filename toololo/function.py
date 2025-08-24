@@ -339,9 +339,11 @@ def make_compatible(
     if not sig.parameters:
         return func
 
-    # Check if the function needs wrapping (has any POSITIONAL_ONLY params)
+    # Check if the function needs wrapping (has any POSITIONAL_ONLY params, excluding _toololo_ params)
     needs_wrapping = any(
-        p.kind == inspect.Parameter.POSITIONAL_ONLY for p in sig.parameters.values()
+        p.kind == inspect.Parameter.POSITIONAL_ONLY 
+        for name, p in sig.parameters.items() 
+        if not name.startswith("_toololo_")
     )
 
     # If no wrapping needed, return as-is
