@@ -55,6 +55,15 @@ def hashed_function_name(func: Callable[..., Any]) -> str:
     return function_name
 
 
+def filter_signature(sig: inspect.Signature) -> inspect.Signature:
+    """Filter out parameters that start with _toololo_ from a signature."""
+    filtered_params = [
+        param for name, param in sig.parameters.items() 
+        if not name.startswith("_toololo_")
+    ]
+    return sig.replace(parameters=filtered_params)
+
+
 def get_function_info(func: Callable[..., Any]) -> str:
     """Extract function information from signature and docstring when source code isn't available."""
     info = []
